@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vogaflex | Painel de Orcamentos e Conversas</title>
+    <meta
+      name="description"
+      content="Painel limpo e acessivel para acompanhar orcamentos, conversas e historico de vendas."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Vogaflex / Conversas & Orcamentos</p>
+          <h1>Painel de Orcamentos em WhatsApp</h1>
+          <p class="subhead">
+            Visao consolidada de historico, vendedores e status do funil em tempo
+            real.
+          </p>
+        </div>
+        <div class="topbar-actions" aria-label="Atalhos de periodo">
+          <button class="chip is-active" type="button">Ultimos 7 dias</button>
+          <button class="chip" type="button">Ultimos 30 dias</button>
+          <button class="chip" type="button">Todo periodo</button>
+        </div>
+      </header>
+
+      <section class="metrics" aria-label="Indicadores principais">
+        <article class="metric-card" style="--delay: 0ms">
+          <p class="metric-label">Orcamentos</p>
+          <p class="metric-value" id="metricTotal">--</p>
+          <p class="metric-foot">Conversas com valor identificado</p>
+        </article>
+        <article class="metric-card" style="--delay: 60ms">
+          <p class="metric-label">Valor total</p>
+          <p class="metric-value" id="metricValor">--</p>
+          <p class="metric-foot">Somatorio dos orcamentos</p>
+        </article>
+        <article class="metric-card" style="--delay: 120ms">
+          <p class="metric-label">Ticket medio</p>
+          <p class="metric-value" id="metricTicket">--</p>
+          <p class="metric-foot">Media por conversa</p>
+        </article>
+        <article class="metric-card" style="--delay: 180ms">
+          <p class="metric-label">Ativos</p>
+          <p class="metric-value" id="metricAtivos">--</p>
+          <p class="metric-foot">Status em andamento</p>
+        </article>
+      </section>
+
+      <main class="grid">
+        <aside class="filters" aria-label="Filtros">
+          <div class="filter-header">
+            <h2>Filtros</h2>
+            <button class="link-button" id="clearFilters" type="button">
+              Limpar tudo
+            </button>
+          </div>
+
+          <label class="field">
+            <span>Buscar</span>
+            <input
+              id="searchInput"
+              type="search"
+              placeholder="Cliente, protocolo, vendedor"
+              autocomplete="off"
+            />
+          </label>
+
+          <label class="field">
+            <span>Status da conversa</span>
+            <select id="statusFilter"></select>
+          </label>
+
+          <label class="field">
+            <span>Etapa do funil</span>
+            <select id="etapaFilter"></select>
+          </label>
+
+          <label class="field">
+            <span>Departamento</span>
+            <select id="departamentoFilter"></select>
+          </label>
+
+          <label class="field">
+            <span>Instancia</span>
+            <select id="instanciaFilter"></select>
+          </label>
+
+          <div class="filter-summary" id="resultsCount" aria-live="polite"></div>
+        </aside>
+
+        <section class="table-panel" aria-label="Tabela de orcamentos">
+          <div class="table-header">
+            <div>
+              <h2>Historico de Conversas</h2>
+              <p>Selecione uma linha para ver detalhes completos.</p>
+            </div>
+            <button class="primary-button" type="button">
+              Exportar CSV
+            </button>
+          </div>
+          <div class="table-wrapper" role="region" aria-label="Tabela rolavel">
+            <table>
+              <thead>
+                <tr>
+                  <th>Protocolo</th>
+                  <th>Cliente</th>
+                  <th>Vendedor</th>
+                  <th>Etapa</th>
+                  <th>Status</th>
+                  <th>Valor</th>
+                  <th>Data</th>
+                </tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="detail-panel" aria-label="Detalhes da conversa">
+          <div class="detail-header">
+            <h2>Resumo da Conversa</h2>
+            <p id="detailSubtitle">Selecione uma conversa</p>
+          </div>
+          <div class="detail-grid">
+            <div>
+              <h3>Informacoes principais</h3>
+              <dl class="detail-list" id="detailMain"></dl>
+            </div>
+            <div>
+              <h3>Contato</h3>
+              <dl class="detail-list" id="detailContact"></dl>
+            </div>
+            <div>
+              <h3>Detalhes do funil</h3>
+              <dl class="detail-list" id="detailFunnel"></dl>
+            </div>
+          </div>
+          <div class="timeline">
+            <h3>Ultimas mensagens</h3>
+            <div class="timeline-list" id="detailTimeline"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

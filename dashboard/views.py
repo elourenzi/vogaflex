@@ -1,0 +1,398 @@
+from django.conf import settings
+from django.db import connection
+from django.http import JsonResponse
+from django.shortcuts import render
+
+
+QUERY = """
+SELECT
+  m.message_id AS id,
+  c.chat_id AS chat_id,
+  NULL::text AS protocolo,
+  COALESCE(c.start_time, c.created_at) AS data_criacao_chat,
+  c.current_funnel_stage AS status_conversa,
+  NULL::text AS tipo_fluxo,
+  c.contact_id AS cliente_id_crm,
+  c.contact_name AS cliente_nome,
+  c.contact_phone AS cliente_telefone,
+  c.attendant_id AS vendedor_id,
+  c.attendant_name AS vendedor_nome,
+  NULL::text AS vendedor_email,
+  c.department_id AS departamento,
+  NULL::text AS coluna_kanban,
+  c.instance_id AS instancia_id,
+  NULL::text AS instancia_nome,
+  c.instance_phone AS instancia_telefone,
+  NULL::text AS instancia_tipo,
+  c.budget_value AS valor_orcamento,
+  c.current_funnel_stage AS etapa_funil,
+  NULL::text AS produto_interesse,
+  c.loss_reason AS motivo_perda,
+  c.end_time AS data_fechamento,
+  NULL::text AS acessorios,
+  CASE WHEN m.from_client THEN 'Recebida' ELSE 'Enviada' END AS msg_direcao,
+  m.from_client AS msg_from_client,
+  m.message_type AS msg_tipo,
+  m.content AS msg_conteudo,
+  NULL::text AS msg_status_envio,
+  NULL::text AS msg_erro_motivo,
+  m."timestamp" AS evento_timestamp,
+  m."timestamp" AS ingested_at
+FROM public.messages m
+JOIN public.conversations c ON c.chat_id = m.chat_id
+ORDER BY m."timestamp" DESC
+LIMIT 5000
+"""
+
+
+def fetch_events():
+    with connection.cursor() as cursor:
+        cursor.execute(QUERY)
+        columns = [col[0] for col in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def events_api(request):
+    try:
+        events = fetch_events()
+        return JsonResponse({"events": events})
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+def conversations_api(request):
+    limit = int(request.GET.get("limit", "200"))
+    offset = int(request.GET.get("offset", "0"))
+    status = request.GET.get("status")
+    etapa = request.GET.get("etapa")
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
+    vendedor = request.GET.get("vendedor")
+
+    where_clauses = []
+    params = []
+    if status and status != "Todos":
+        if status == "Triagem":
+            where_clauses.append("c.current_funnel_stage = %s")
+            params.append("screening")
+        elif status == "Aguardando":
+            where_clauses.append("c.current_funnel_stage IN (%s, %s)")
+            params.extend(["waiting", "Em espera"])
+        elif status == "Em atendimento":
+            where_clauses.append("c.current_funnel_stage = %s")
+            params.append("Em atendimento")
+        elif status == "Finalizado":
+            where_clauses.append("c.current_funnel_stage IN (%s, %s, %s)")
+            params.extend(["Finalizado", "finished", "closed"])
+    if etapa and etapa != "Todos":
+        where_clauses.append("c.current_funnel_stage = %s")
+        params.append(etapa)
+    if date_from:
+        where_clauses.append("COALESCE(c.start_time, c.created_at) >= %s")
+        params.append(date_from)
+    if date_to:
+        where_clauses.append("COALESCE(c.start_time, c.created_at) <= %s")
+        params.append(date_to)
+    if vendedor and vendedor != "Todos":
+        where_clauses.append("c.attendant_name = %s")
+        params.append(vendedor)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    query = """
+        SELECT
+          c.chat_id,
+          c.contact_name AS cliente_nome,
+          c.contact_phone AS cliente_telefone,
+          c.attendant_name AS vendedor_nome,
+          c.current_funnel_stage AS status_conversa,
+          CASE
+            WHEN c.current_funnel_stage = 'screening' THEN 'Triagem'
+            WHEN c.current_funnel_stage IN ('waiting', 'Em espera') THEN 'Aguardando'
+            WHEN c.current_funnel_stage = 'Em atendimento' THEN 'Em atendimento'
+            WHEN c.current_funnel_stage IN ('Finalizado', 'finished', 'closed') THEN 'Finalizado'
+            ELSE NULL
+          END AS status_normalizado,
+          c.current_funnel_stage AS etapa_funil,
+          c.department_id AS departamento,
+          c.finish_reason AS finish_reason,
+          c.instance_id AS instancia_id,
+          c.instance_phone AS instancia_telefone,
+          c.start_time AS data_criacao_chat,
+          c.end_time AS data_fechamento,
+          c.budget_value AS valor_orcamento,
+          c.loss_reason AS motivo_perda,
+          c.finish_reason AS finish_reason,
+          c.ai_agent_rating AS ai_agent_rating,
+          c.ai_customer_sentiment AS ai_customer_sentiment,
+          c.ai_summary AS ai_summary,
+          c.ai_suggestion AS ai_suggestion,
+          c.contact_reason AS contact_reason,
+          c.updated_at AS updated_at,
+          c.created_at AS created_at,
+          m.message_type AS msg_tipo,
+          m.content AS msg_conteudo,
+          m."timestamp" AS evento_timestamp,
+          m.from_client AS msg_from_client
+        FROM conversations c
+        LEFT JOIN LATERAL (
+          SELECT message_type, content, "timestamp", from_client
+          FROM messages
+          WHERE chat_id = c.chat_id
+          ORDER BY "timestamp" DESC
+          LIMIT 1
+        ) m ON TRUE
+        {where_sql}
+        ORDER BY COALESCE(m."timestamp", c.updated_at, c.created_at) DESC
+        LIMIT %s OFFSET %s;
+    """.format(where_sql=where_sql)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(query, [*params, limit, offset])
+            columns = [col[0] for col in cursor.description]
+            rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return JsonResponse({"conversations": rows})
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+
+def messages_api(request):
+    chat_id = request.GET.get("chat_id")
+    if not chat_id:
+        return JsonResponse({"error": "chat_id_required"}, status=400)
+
+    limit = int(request.GET.get("limit", "500"))
+    offset = int(request.GET.get("offset", "0"))
+
+    query = """
+        SELECT
+          message_id AS id,
+          chat_id,
+          "timestamp" AS evento_timestamp,
+          content AS msg_conteudo,
+          message_type AS msg_tipo,
+          from_client AS msg_from_client
+        FROM messages
+        WHERE chat_id = %s
+        ORDER BY "timestamp" ASC
+        LIMIT %s OFFSET %s;
+    """
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(query, [chat_id, limit, offset])
+            columns = [col[0] for col in cursor.description]
+            rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return JsonResponse({"messages": rows})
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+
+def dashboard_api(request):
+    status = request.GET.get("status")
+    etapa = request.GET.get("etapa")
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
+    vendedor = request.GET.get("vendedor")
+
+    where_clauses = []
+    params = []
+    if status and status != "Todos":
+        if status == "Triagem":
+            where_clauses.append("c.current_funnel_stage = %s")
+            params.append("screening")
+        elif status == "Aguardando":
+            where_clauses.append("c.current_funnel_stage IN (%s, %s)")
+            params.extend(["waiting", "Em espera"])
+        elif status == "Em atendimento":
+            where_clauses.append("c.current_funnel_stage = %s")
+            params.append("Em atendimento")
+        elif status == "Finalizado":
+            where_clauses.append("c.current_funnel_stage IN (%s, %s, %s)")
+            params.extend(["Finalizado", "finished", "closed"])
+    if etapa and etapa != "Todos":
+        where_clauses.append("c.current_funnel_stage = %s")
+        params.append(etapa)
+    if date_from:
+        where_clauses.append("COALESCE(c.start_time, c.created_at) >= %s")
+        params.append(date_from)
+    if date_to:
+        where_clauses.append("COALESCE(c.start_time, c.created_at) <= %s")
+        params.append(date_to)
+    if vendedor and vendedor != "Todos":
+        where_clauses.append("c.attendant_name = %s")
+        params.append(vendedor)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    stats_query = f"""
+        WITH filtered AS (
+          SELECT *
+          FROM conversations c
+          {where_sql}
+        ),
+        bot_events AS (
+          SELECT
+            m.chat_id,
+            MIN(m."timestamp") AS bot_transfer_ts
+          FROM messages m
+          JOIN filtered f ON f.chat_id = m.chat_id
+          WHERE m.from_client = false
+            AND m.content IS NOT NULL
+            AND (
+              m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+              OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+              OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+              OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+              OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+              OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+              OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+              OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
+            )
+          GROUP BY m.chat_id
+        ),
+        first_contact AS (
+          SELECT
+            f.chat_id,
+            MIN(m."timestamp") FILTER (WHERE m.from_client = true) AS first_client_ts
+          FROM filtered f
+          JOIN messages m ON m.chat_id = f.chat_id
+          GROUP BY f.chat_id
+        ),
+        business_duration AS (
+          SELECT
+            fc.chat_id,
+            SUM(
+              GREATEST(
+                0,
+                EXTRACT(
+                  EPOCH FROM (
+                    LEAST(f.end_time AT TIME ZONE 'America/Sao_Paulo', day_end)
+                    - GREATEST(fc.first_client_ts AT TIME ZONE 'America/Sao_Paulo', day_start)
+                  )
+                )
+              )
+            ) AS business_seconds
+          FROM first_contact fc
+          JOIN filtered f ON f.chat_id = fc.chat_id
+          JOIN LATERAL (
+            SELECT
+              day::timestamp + time '08:00' AS day_start,
+              day::timestamp + time '18:00' AS day_end
+            FROM generate_series(
+              date_trunc('day', fc.first_client_ts AT TIME ZONE 'America/Sao_Paulo'),
+              date_trunc('day', f.end_time AT TIME ZONE 'America/Sao_Paulo'),
+              interval '1 day'
+            ) AS day
+            WHERE EXTRACT(DOW FROM day) BETWEEN 1 AND 5
+          ) d ON TRUE
+          WHERE fc.first_client_ts IS NOT NULL AND f.end_time IS NOT NULL
+          GROUP BY fc.chat_id
+        ),
+        human_events AS (
+          SELECT
+            m.chat_id,
+            MIN(m."timestamp") AS first_human_ts
+          FROM messages m
+          JOIN bot_events b ON b.chat_id = m.chat_id
+          WHERE m.from_client = false
+            AND m."timestamp" > b.bot_transfer_ts
+            AND (
+              m.content IS NULL OR (
+                m.content NOT ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                AND m.content NOT ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                AND m.content NOT ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                AND m.content NOT ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                AND m.content NOT ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                AND m.content NOT ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                AND m.content NOT ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                AND m.content NOT ILIKE '%%atendimento ao nosso setor de vendas.%%'
+              )
+            )
+          GROUP BY m.chat_id
+        ),
+        business_handoff AS (
+          SELECT
+            b.chat_id,
+            SUM(
+              GREATEST(
+                0,
+                EXTRACT(
+                  EPOCH FROM (
+                    LEAST(h.first_human_ts AT TIME ZONE 'America/Sao_Paulo', day_end)
+                    - GREATEST(b.bot_transfer_ts AT TIME ZONE 'America/Sao_Paulo', day_start)
+                  )
+                )
+              )
+            ) AS business_seconds
+          FROM bot_events b
+          JOIN human_events h ON h.chat_id = b.chat_id
+          JOIN LATERAL (
+            SELECT
+              day::timestamp + time '08:00' AS day_start,
+              day::timestamp + time '18:00' AS day_end
+            FROM generate_series(
+              date_trunc('day', b.bot_transfer_ts AT TIME ZONE 'America/Sao_Paulo'),
+              date_trunc('day', h.first_human_ts AT TIME ZONE 'America/Sao_Paulo'),
+              interval '1 day'
+            ) AS day
+            WHERE EXTRACT(DOW FROM day) BETWEEN 1 AND 5
+          ) d ON TRUE
+          GROUP BY b.chat_id
+        )
+        SELECT
+          AVG(bd.business_seconds) AS avg_duration_seconds,
+          AVG(bh.business_seconds) AS avg_handoff_seconds
+        FROM filtered f
+        LEFT JOIN business_handoff bh ON bh.chat_id = f.chat_id
+        LEFT JOIN business_duration bd ON bd.chat_id = f.chat_id;
+    """
+
+    stage_count_query = f"""
+        WITH filtered AS (
+          SELECT *
+          FROM conversations c
+          {where_sql}
+        ),
+        normalized AS (
+          SELECT
+            CASE
+              WHEN current_funnel_stage = 'screening' THEN 'Triagem'
+              WHEN current_funnel_stage IN ('waiting', 'Em espera') THEN 'Aguardando'
+              WHEN current_funnel_stage = 'Em atendimento' THEN 'Em atendimento'
+              WHEN current_funnel_stage IN ('Finalizado', 'finished', 'closed') THEN 'Finalizado'
+              WHEN current_funnel_stage = 'active' THEN NULL
+              ELSE COALESCE(current_funnel_stage, 'Sem etapa')
+            END AS stage_name
+          FROM filtered
+          WHERE current_funnel_stage IS NOT NULL
+        )
+        SELECT stage_name, COUNT(*) AS total
+        FROM normalized
+        WHERE stage_name IS NOT NULL
+        GROUP BY stage_name
+        ORDER BY total DESC;
+    """
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(stats_query, params)
+            stats_row = cursor.fetchone()
+            stats = {
+                "avg_duration_seconds": float(stats_row[0]) if stats_row[0] is not None else 0,
+                "avg_handoff_seconds": float(stats_row[1]) if stats_row[1] is not None else 0,
+            }
+            cursor.execute(stage_count_query, params)
+            stage_rows = cursor.fetchall()
+            stage_counts = [
+                {"stage_name": row[0], "total": row[1]} for row in stage_rows
+            ]
+        return JsonResponse({"stats": stats, "stage_counts": stage_counts})
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+
+def index(request):
+    return render(request, "dashboard/index.html", {"debug": settings.DEBUG})

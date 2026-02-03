@@ -1,0 +1,892 @@
+import { useEffect, useMemo, useState } from "react";
+
+const currencyFormatter = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  maximumFractionDigits: 0,
+});
+
+const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+const timeFormatter = new Intl.DateTimeFormat("pt-BR", {
+  timeStyle: "short",
+});
+
+const normalizeMoney = (value) => {
+  if (typeof value === "number") return value;
+  if (!value) return 0;
+  let text = String(value).trim();
+  if (text.includes(",")) {
+    text = text.replace(/\./g, "").replace(",", ".");
+  }
+  const cleaned = text.replace(/[^\d.-]/g, "");
+  const parsed = Number.parseFloat(cleaned);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const normalizeText = (value) => String(value || "").toLowerCase().trim();
+
+const normalizeBotText = (value) =>
+  normalizeText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+const pickTimestamp = (item) =>
+  new Date(item.evento_timestamp || item.data_criacao_chat || Date.now());
+
+const splitVendorNameFromContent = (content) => {
+  const text = String(content || "");
+  const match = text.match(/\*([^*]+)\*/);
+  if (!match) {
+    return { name: null, content: text.trim() || "--" };
+  }
+  const name = match[1].trim();
+  const normalizedName = normalizeBotText(name);
+  const wordCount = name.split(/\s+/).filter(Boolean).length;
+  const looksLikeName =
+    name.length > 0 &&
+    name.length <= 40 &&
+    wordCount <= 5 &&
+    !/[.!?:;]/.test(name) &&
+    !/\d/.test(name) &&
+    !normalizedName.includes("horario de atendimento") &&
+    !normalizedName.includes("fora do horario") &&
+    !normalizedName.includes("assistente") &&
+    !normalizedName.includes("setor de vendas") &&
+    !normalizedName.includes("time de vendas");
+  if (!looksLikeName) {
+    return { name: null, content: text.trim() || "--" };
+  }
+  const cleaned = text.replace(match[0], "").trim();
+  return { name, content: cleaned || "--" };
+};
+
+const formatCurrency = (value) => currencyFormatter.format(value || 0);
+
+const formatDate = (value) => {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--";
+  return dateFormatter.format(date);
+};
+
+const formatTime = (value) => {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--";
+  return timeFormatter.format(date);
+};
+
+const formatDuration = (seconds) => {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "--";
+  const totalMinutes = Math.round(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+};
+
+const messagePlaceholder = (messageType) => {
+  const type = normalizeText(messageType);
+  if (type === "image") return "[Imagem]";
+  if (type === "audio") return "[Audio]";
+  if (type === "video") return "[Video]";
+  if (type === "file") return "[Arquivo]";
+  if (type === "document") return "[Documento]";
+  if (type === "template") return "[Template]";
+  if (type === "call") return "[Chamada]";
+  if (type === "vcard") return "[Contato]";
+  if (type === "location") return "[Localizacao]";
+  return "[Mensagem]";
+};
+
+const messageContent = (entry) => {
+  if (entry.msg_conteudo) return entry.msg_conteudo;
+  return messagePlaceholder(entry.msg_tipo);
+};
+
+const cleanMessageText = (value) => {
+  const normalized = String(value || "").replace(/\r\n?/g, "\n");
+  const lines = normalized.split("\n");
+  while (lines.length && lines[0].trim() === "") lines.shift();
+  if (lines.length && lines[0].trim() === ":") lines.shift();
+  while (lines.length && lines[0].trim() === "") lines.shift();
+  const cleaned = lines.join("\n").trim();
+  return cleaned || "--";
+};
+
+const botPhrases = [
+  "ola, seja bem-vindo(a)! sou a helena, assistente de vendas da vogaflex.",
+  "deseja tirar alguma duvida ou gostaria de um orcamento?",
+  "nosso horario de atendimento e das 08h as 17h, de segunda a sexta-feira.",
+  "no momento, nossos atendentes estao fora do horario de atendimento. assim que retornarmos, daremos sequencia a nossa conversa.",
+  "agradeco pelas informacoes! estou direcionando o seu atendimento ao nosso setor de vendas",
+  "vou verificar a disponibilidade com nosso time de vendas. agradeco pelas informacoes! estou direcionando o seu atendimento ao nosso setor de vendas",
+  "agradeco pelas informacoes! estou direcionando o seu atendimento ao nosso time de vendas",
+  "vou direcionar seu atendimento ao nosso time de vendas",
+  "vou encaminhar ao nosso time de vendas",
+  "obrigado, vou encaminhar ao nosso time de vendas",
+  "obrigada, vou encaminhar ao nosso time de vendas",
+];
+
+const isBotContent = (entry, content) => {
+  const messageType = normalizeBotText(entry.msg_tipo);
+  if (["template", "system", "bot", "automation", "automated"].includes(messageType)) {
+    return true;
+  }
+  const normalized = normalizeBotText(content);
+  if (!normalized || normalized === "null") return false;
+  if (botPhrases.some((phrase) => normalized.includes(phrase))) return true;
+  if (normalized.includes("assistente de vendas")) return true;
+  if (normalized.includes("horario de atendimento")) return true;
+  if (normalized.includes("fora do horario")) return true;
+  if (normalized.includes("daremos sequencia")) return true;
+  if (normalized.includes("retornarmos")) return true;
+  if (normalized.includes("seja bem-vind")) return true;
+  if (normalized.includes("deseja tirar alguma duvida")) return true;
+  if (normalized.includes("gostaria de um orcamento")) return true;
+  return false;
+};
+
+const buildConversations = (items) => {
+  const map = new Map();
+  items.forEach((item) => {
+    const key = item.chat_id || item.protocolo || String(item.id);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(item);
+  });
+
+  return [...map.entries()].map(([chatId, list]) => {
+    const sorted = [...list].sort(
+      (a, b) => pickTimestamp(a) - pickTimestamp(b)
+    );
+    const latest = sorted[sorted.length - 1];
+    const budgetEvents = sorted.filter(
+      (item) => Number(item.valor_orcamento) > 0
+    );
+    const latestBudget = [...budgetEvents]
+      .reverse()
+      .find((item) => Number(item.valor_orcamento) > 0);
+    return {
+      ...latest,
+      chat_id: chatId,
+      valor_orcamento: latestBudget ? latestBudget.valor_orcamento : 0,
+      budget_updated_at: latestBudget
+        ? latestBudget.evento_timestamp || latestBudget.data_criacao_chat
+        : null,
+      timeline: sorted,
+    };
+  });
+};
+
+function App() {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [selectedId, setSelectedId] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("Todos");
+  const [etapaFilter, setEtapaFilter] = useState("Todos");
+  const [vendedorFilter, setVendedorFilter] = useState("Todos");
+  const [monthFilter, setMonthFilter] = useState(true);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [activeView, setActiveView] = useState("conversations");
+  const [fetchVersion, setFetchVersion] = useState(0);
+  const [dashboardData, setDashboardData] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardDateFrom, setDashboardDateFrom] = useState("");
+  const [dashboardDateTo, setDashboardDateTo] = useState("");
+  const [dashboardFetchVersion, setDashboardFetchVersion] = useState(0);
+
+  const loadConversations = async () => {
+    const params = new URLSearchParams();
+    params.set("limit", "50000");
+    if (statusFilter && statusFilter !== "Todos") {
+      params.set("status", statusFilter);
+    }
+    if (etapaFilter && etapaFilter !== "Todos") {
+      params.set("etapa", etapaFilter);
+    }
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+    if (!dateFrom && !dateTo && monthFilter) {
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const fmt = (d) => d.toISOString().slice(0, 10);
+      params.set("date_from", fmt(monthStart));
+      params.set("date_to", fmt(monthEnd));
+    }
+    if (vendedorFilter && vendedorFilter !== "Todos") {
+      params.set("vendedor", vendedorFilter);
+    }
+    const response = await fetch(`/api/conversations/?${params}`);
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Erro ao carregar dados");
+    }
+    const normalized = (data.conversations || []).map((item) => ({
+      ...item,
+      valor_orcamento: normalizeMoney(item.valor_orcamento),
+    }));
+    setEvents(normalized);
+  };
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    loadConversations()
+      .catch((err) => {
+        if (!active) return;
+        setError(err.message || "Erro desconhecido");
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchVersion]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [search]);
+
+  useEffect(() => {
+    if (dateFrom || dateTo) {
+      setMonthFilter(false);
+    }
+  }, [dateFrom, dateTo]);
+
+  const conversations = useMemo(() => buildConversations(events), [events]);
+
+  const filteredConversations = useMemo(() => {
+    const term = normalizeText(debouncedSearch);
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const fromDate = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
+    const toDate = dateTo ? new Date(`${dateTo}T23:59:59`) : null;
+    return conversations.filter((item) => {
+      // filtros ja aplicados no backend quando usa o botao "Aplicar"
+      if (monthFilter) {
+        const basis =
+          item.evento_timestamp ||
+          item.data_criacao_chat ||
+          item.updated_at ||
+          item.created_at;
+        if (!basis) return false;
+        const basisDate = new Date(basis);
+        if (Number.isNaN(basisDate.getTime())) return false;
+        if (basisDate < monthStart || basisDate >= monthEnd) return false;
+      }
+      if (!term) return true;
+      const haystack = [
+        item.protocolo,
+        item.chat_id,
+        item.cliente_nome,
+        item.cliente_telefone,
+        item.vendedor_nome,
+        item.vendedor_email,
+        item.status_normalizado,
+      ]
+        .map(normalizeText)
+        .join(" ");
+      return haystack.includes(term);
+    });
+  }, [conversations, debouncedSearch, monthFilter, dateFrom, dateTo]);
+
+  const statusOptions = [
+    "Todos",
+    "Triagem",
+    "Aguardando",
+    "Em atendimento",
+    "Finalizado",
+  ];
+
+  const vendedorOptions = useMemo(() => {
+    const values = Array.from(
+      new Set(conversations.map((item) => item.vendedor_nome).filter(Boolean))
+    ).sort((a, b) => a.localeCompare(b));
+    return ["Todos", ...values];
+  }, [conversations]);
+
+  const etapaOptions = useMemo(() => {
+    const statusSet = new Set(statusOptions.map((s) => normalizeText(s)));
+    const values = Array.from(
+      new Set(
+        conversations
+          .map((item) => item.etapa_funil)
+          .filter(
+            (value) => value && !statusSet.has(normalizeText(value))
+          )
+      )
+    ).sort((a, b) => a.localeCompare(b));
+    return ["Todos", ...values];
+  }, [conversations]);
+
+  useEffect(() => {
+    if (!selectedId && filteredConversations.length > 0) {
+      setSelectedId(filteredConversations[0].chat_id);
+    }
+  }, [filteredConversations, selectedId]);
+
+  const selected = filteredConversations.find(
+    (item) => item.chat_id === selectedId
+  );
+
+  const [messages, setMessages] = useState([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (!selectedId) {
+      setMessages([]);
+      return () => {};
+    }
+    const loadMessages = async () => {
+      setMessagesLoading(true);
+      try {
+        const response = await fetch(
+          `/api/messages/?chat_id=${encodeURIComponent(selectedId)}&limit=2000`
+        );
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Erro ao carregar mensagens");
+        }
+        if (!active) return;
+        setMessages(data.messages || []);
+      } catch (err) {
+        if (!active) return;
+        setError(err.message || "Erro desconhecido");
+      } finally {
+        if (active) setMessagesLoading(false);
+      }
+    };
+    loadMessages();
+    return () => {
+      active = false;
+    };
+  }, [selectedId]);
+
+  const buildDashboardParams = () => {
+    const params = new URLSearchParams();
+    if (statusFilter && statusFilter !== "Todos") {
+      params.set("status", statusFilter);
+    }
+    if (etapaFilter && etapaFilter !== "Todos") {
+      params.set("etapa", etapaFilter);
+    }
+    if (vendedorFilter && vendedorFilter !== "Todos") {
+      params.set("vendedor", vendedorFilter);
+    }
+    if (dashboardDateFrom) params.set("date_from", dashboardDateFrom);
+    if (dashboardDateTo) params.set("date_to", dashboardDateTo);
+    if (!dashboardDateFrom && !dashboardDateTo) {
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const fmt = (d) => d.toISOString().slice(0, 10);
+      params.set("date_from", fmt(monthStart));
+      params.set("date_to", fmt(monthEnd));
+    }
+    return params.toString();
+  };
+
+  useEffect(() => {
+    let active = true;
+    if (activeView !== "dashboard") return () => {};
+    setDashboardLoading(true);
+    fetch(`/api/dashboard/?${buildDashboardParams()}`)
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!active) return;
+        if (!ok) throw new Error(data.error || "Erro ao carregar dashboard");
+        setDashboardData(data);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err.message || "Erro desconhecido");
+      })
+      .finally(() => {
+        if (!active) return;
+        setDashboardLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, dashboardFetchVersion]);
+
+  const dashboardStats = dashboardData?.stats;
+  const dashboardStages = dashboardData?.stage_counts || [];
+
+  return (
+    <div className="app-shell">
+      <aside className="rail">
+        <div className="rail-logo">V</div>
+        <div className="rail-icons">
+          <button
+            className={`rail-btn${activeView === "conversations" ? " is-active" : ""}`}
+            type="button"
+            onClick={() => setActiveView("conversations")}
+            aria-label="Conversas"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M4 5.5C4 4.12 5.12 3 6.5 3h11C18.88 3 20 4.12 20 5.5v8c0 1.38-1.12 2.5-2.5 2.5H9l-4.5 4.5v-4.5h-1C2.12 16 1 14.88 1 13.5v-8C1 4.12 2.12 3 3.5 3H4Z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+          <button
+            className={`rail-btn${activeView === "dashboard" ? " is-active" : ""}`}
+            type="button"
+            onClick={() => setActiveView("dashboard")}
+            aria-label="Dashboard"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M3 13h6v8H3v-8Zm12-10h6v18h-6V3ZM11 8h6v13h-6V8ZM3 3h6v8H3V3Z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+        </div>
+        <div className="rail-footer">
+          <button className="rail-btn" type="button" aria-label="Ajuda">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 15.5a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Zm1.7-5.9c-.7.4-.95.7-.95 1.6h-1.7c0-1.6.55-2.4 1.65-3 1-.5 1.45-.85 1.45-1.6 0-.8-.65-1.35-1.55-1.35-.95 0-1.6.55-1.7 1.4H8.1C8.25 6.5 9.5 5.2 11.8 5.2c2.2 0 3.6 1.2 3.6 3 0 1.5-.8 2.3-1.7 2.8Z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+        </div>
+      </aside>
+
+      {activeView === "conversations" ? (
+        <>
+          <section className="panel left-panel">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Vogaflex</p>
+            <h2>Conversas</h2>
+            <p className="muted">
+              {loading ? "Carregando..." : `${filteredConversations.length} encontradas`}
+            </p>
+          </div>
+          <span className="pill">{monthFilter ? "Mes corrente" : "Periodo"}</span>
+        </div>
+
+        {error ? (
+          <div className="alert" role="alert">
+            <strong>Falha ao carregar os dados.</strong>
+            <span>{error}</span>
+          </div>
+        ) : null}
+
+        <label className="field">
+          <span>Buscar</span>
+          <input
+            type="search"
+            placeholder="Cliente, protocolo, vendedor"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+        <details className="filter-menu">
+          <summary>Filtros</summary>
+          <label className="field toggle">
+            <span>Mes corrente</span>
+            <input
+              type="checkbox"
+              checked={monthFilter}
+              onChange={(event) => setMonthFilter(event.target.checked)}
+            />
+          </label>
+          <div className="filter-row">
+            <label className="field">
+              <span>De</span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(event) => setDateFrom(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>Ate</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(event) => setDateTo(event.target.value)}
+              />
+            </label>
+          </div>
+          <div className="filter-row">
+            <label className="field">
+              <span>Status</span>
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+              >
+                {statusOptions.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Etapa</span>
+              <select
+                value={etapaFilter}
+                onChange={(event) => setEtapaFilter(event.target.value)}
+              >
+                {etapaOptions.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label className="field">
+            <span>Vendedor</span>
+            <select
+              value={vendedorFilter}
+              onChange={(event) => setVendedorFilter(event.target.value)}
+            >
+              {vendedorOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => setFetchVersion((v) => v + 1)}
+          >
+            Aplicar filtros
+          </button>
+        </details>
+
+        <div className="conversation-list" role="listbox">
+          {filteredConversations.length === 0 ? (
+            <p className="empty">Nenhuma conversa encontrada.</p>
+          ) : (
+            filteredConversations
+              .slice()
+              .sort((a, b) => pickTimestamp(b) - pickTimestamp(a))
+              .map((item) => (
+                <button
+                  key={item.chat_id}
+                  type="button"
+                  className={`conversation-item${
+                    item.chat_id === selectedId ? " is-active" : ""
+                  }`}
+                  onClick={() => setSelectedId(item.chat_id)}
+                >
+                  <div className="conversation-title">
+                    <strong>{item.cliente_nome || item.chat_id}</strong>
+                  </div>
+                  <div className="conversation-meta">
+                    <span>{item.status_normalizado || "--"}</span>
+                    <span>{formatCurrency(item.valor_orcamento)}</span>
+                  </div>
+                  <div className="conversation-preview">
+                    {`${messageContent(item).slice(0, 140)}${
+                      messageContent(item).length > 140 ? "..." : ""
+                    }`}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="panel chat-panel">
+          <div className="chat-header">
+            <div>
+              <p className="eyebrow">Historico</p>
+              <h2>{selected?.cliente_nome || "Selecione uma conversa"}</h2>
+              <p className="vendor-tag">
+                {selected
+                  ? `vendedor: "${selected.vendedor_nome || "--"}"`
+                  : 'vendedor: "--"'}
+              </p>
+            </div>
+            <div className="tag">
+            {selected?.status_normalizado || "Sem status"}
+            </div>
+          </div>
+
+        <div className="chat-window" role="log">
+          {!selected ? (
+            <p className="empty">
+              Selecione uma conversa para ver o historico completo.
+            </p>
+          ) : messagesLoading ? (
+            <p className="empty">Carregando mensagens...</p>
+          ) : (
+            messages.map((entry, index) => {
+              const content = cleanMessageText(messageContent(entry));
+              const { name: vendorName, content: cleanedContent } =
+                splitVendorNameFromContent(content);
+              const fromClient = entry.msg_from_client === true;
+              const bot = isBotContent(entry, content) || (!fromClient && !vendorName);
+              const sender = {
+                name: bot
+                  ? "Bot"
+                  : fromClient
+                  ? selected.cliente_nome || "Cliente"
+                  : vendorName || selected.vendedor_nome || "Vendedor",
+                role: fromClient ? "client" : "vendor",
+                content: fromClient ? content : vendorName ? cleanedContent : content,
+              };
+              const statusText = String(entry.msg_status_envio || "").trim();
+              const showStatus =
+                statusText && statusText.toLowerCase() !== "true";
+
+              return (
+                <div
+                  key={entry.id || `${selected.chat_id}-${index}`}
+                  className={`message-row${
+                    sender.role === "vendor" ? " is-outgoing" : ""
+                  }`}
+                >
+                  <article
+                    className={`message-bubble${
+                      sender.role === "vendor" ? " is-outgoing" : ""
+                    }`}
+                  >
+                    <div className="message-meta">
+                      <span>
+                        {sender.name}
+                        {bot ? " · BOT" : ""}
+                      </span>
+                    </div>
+                    <p className="message-text">{sender.content}</p>
+                    {showStatus ? (
+                      <div className="message-status">{statusText}</div>
+                    ) : null}
+                  </article>
+                  <span className="message-time">
+                    {formatTime(entry.evento_timestamp)}
+                  </span>
+                </div>
+              );
+            })
+            )}
+          </div>
+        </section>
+
+        <aside className="panel right-panel">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Detalhes</p>
+            <h3>Perfil do cliente</h3>
+            <p className="muted">{selected?.protocolo || "--"}</p>
+          </div>
+        </div>
+        {!selected ? (
+          <p className="empty">Nenhuma conversa selecionada.</p>
+        ) : (
+          <div className="detail-grid">
+            <details className="detail-menu">
+              <summary>Informacoes principais</summary>
+              <dl className="detail-list">
+                <div>
+                  <dt>Status</dt>
+                  <dd>{selected.status_conversa || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Valor do orcamento</dt>
+                  <dd>{formatCurrency(selected.valor_orcamento)}</dd>
+                </div>
+                <div>
+                  <dt>Data de criacao</dt>
+                  <dd>{formatDate(selected.data_criacao_chat)}</dd>
+                </div>
+                <div>
+                  <dt>Data de fechamento</dt>
+                  <dd>{formatDate(selected.data_fechamento)}</dd>
+                </div>
+                <div>
+                  <dt>Nota IA</dt>
+                  <dd>{selected.ai_agent_rating ?? "--"}</dd>
+                </div>
+                <div>
+                  <dt>Sentimento IA</dt>
+                  <dd>{selected.ai_customer_sentiment ?? "--"}</dd>
+                </div>
+              </dl>
+            </details>
+            <details className="detail-menu">
+              <summary>Contato</summary>
+              <dl className="detail-list">
+                <div>
+                  <dt>Cliente</dt>
+                  <dd>{selected.cliente_nome || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Telefone</dt>
+                  <dd>{selected.cliente_telefone || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Vendedor</dt>
+                  <dd>{selected.vendedor_nome || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Email</dt>
+                  <dd>{selected.vendedor_email || "--"}</dd>
+                </div>
+              </dl>
+            </details>
+            <details className="detail-menu">
+              <summary>Funil & IA</summary>
+              <dl className="detail-list">
+                <div>
+                  <dt>Etapa</dt>
+                  <dd>{selected.etapa_funil || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Coluna Kanban</dt>
+                  <dd>{selected.coluna_kanban || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Departamento</dt>
+                  <dd>{selected.departamento || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Produto</dt>
+                  <dd>{selected.produto_interesse || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Motivo perda</dt>
+                  <dd>{selected.motivo_perda || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Resumo IA</dt>
+                  <dd>{selected.ai_summary || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Sugestao IA</dt>
+                  <dd>{selected.ai_suggestion || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Motivo contato</dt>
+                  <dd>{selected.contact_reason || "--"}</dd>
+                </div>
+              </dl>
+            </details>
+          </div>
+        )}
+        </aside>
+        </>
+      ) : (
+        <section className="panel dashboard-panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Vogaflex</p>
+              <h2>Dashboard</h2>
+              <p className="muted">Resumo das conversas e desempenho.</p>
+            </div>
+          </div>
+          {dashboardLoading ? (
+            <div className="empty">Carregando indicadores...</div>
+          ) : dashboardStats ? (
+            <>
+              <div className="dashboard-filters">
+                <label className="field">
+                  <span>De</span>
+                  <input
+                    type="date"
+                    value={dashboardDateFrom}
+                    onChange={(event) => setDashboardDateFrom(event.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Ate</span>
+                  <input
+                    type="date"
+                    value={dashboardDateTo}
+                    onChange={(event) => setDashboardDateTo(event.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => setDashboardFetchVersion((v) => v + 1)}
+                >
+                  Aplicar periodo
+                </button>
+              </div>
+              <div className="dashboard-grid">
+                <article className="stat-card">
+                  <p className="stat-label">Tempo medio</p>
+                  <p className="stat-value">
+                    {formatDuration(dashboardStats.avg_duration_seconds)}
+                  </p>
+                  <p className="stat-foot">Duracao da conversa</p>
+                </article>
+                <article className="stat-card">
+                  <p className="stat-label">Tempo SLA</p>
+                  <p className="stat-value">
+                    {formatDuration(dashboardStats.avg_handoff_seconds)}
+                  </p>
+                  <p className="stat-foot">IA transfere → vendedor assume</p>
+                </article>
+              </div>
+              <div className="dashboard-bars">
+                <h3>Conversas por etapa do funil</h3>
+                {dashboardStages.length === 0 ? (
+                  <p className="empty">Sem dados de funil.</p>
+                ) : (
+                  <div className="bar-list">
+                    {(() => {
+                      const max = Math.max(...dashboardStages.map((s) => s.total), 1);
+                      return dashboardStages.map((stage) => {
+                        const width = Math.round((stage.total / max) * 100);
+                        return (
+                          <div className="bar-row" key={stage.stage_name}>
+                            <span className="bar-label">{stage.stage_name}</span>
+                            <div className="bar-track">
+                              <div
+                                className="bar-fill"
+                                style={{ width: `${width}%` }}
+                              />
+                            </div>
+                            <span className="bar-value">{stage.total}</span>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="empty">Sem dados para o periodo.</div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+export default App;
