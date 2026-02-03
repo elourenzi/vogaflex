@@ -1,0 +1,13 @@
+.git
+__pycache__
+*.pyc
+.venv
+.env
+db.sqlite3
+node_modules
+frontend/node_modules
+frontend/dist
+frontend/.vite
+dashboard/static/frontend
+data
+Análise QA - Backfill de Chats Finalizados (10).json
