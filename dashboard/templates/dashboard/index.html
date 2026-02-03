@@ -10,11 +10,10 @@
       content="Painel limpo e acessivel para acompanhar orcamentos, conversas e historico de vendas."
     />
     {% if not debug %}
-      {% with css_file=vite_css 'src/main.jsx' %}
-        {% if css_file %}
-          <link rel="stylesheet" href="{% static css_file %}" />
-        {% endif %}
-      {% endwith %}
+      {% vite_css 'src/main.jsx' as css_file %}
+      {% if css_file %}
+        <link rel="stylesheet" href="{% static css_file %}" />
+      {% endif %}
     {% endif %}
   </head>
   <body>
