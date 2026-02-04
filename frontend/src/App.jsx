@@ -184,7 +184,108 @@ const buildConversations = (items) => {
   });
 };
 
-function App() {
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    onLogin?.();
+  };
+
+  return (
+    <div className="login-page">
+      <div className="login-grid">
+        <section className="login-brand">
+          <div className="login-logo" aria-label="Vogaflex">
+            <span className="logo-mark" aria-hidden="true" />
+            <span className="logo-text">
+              <span className="logo-bold">voga</span>
+              <span className="logo-light">flex</span>
+            </span>
+            <span className="logo-tagline">
+              more
+              <br />
+              e decore
+            </span>
+          </div>
+          <h1>Gestao inteligente do relacionamento com seus clientes.</h1>
+          <p className="login-subhead">
+            Centralize conversas, acompanhe o funil em tempo real e responda com agilidade
+            mantendo o tom premium da Vogaflex.
+          </p>
+          <div className="login-highlights">
+            <article className="highlight-card">
+              <p className="highlight-label">Atendimento premium</p>
+              <p className="highlight-value">SLA mais rapido</p>
+              <p className="highlight-note">Monitoramento de fila e transferencias.</p>
+            </article>
+            <article className="highlight-card">
+              <p className="highlight-label">Visao do funil</p>
+              <p className="highlight-value">Etapas claras</p>
+              <p className="highlight-note">Status e historico em um unico lugar.</p>
+            </article>
+            <article className="highlight-card">
+              <p className="highlight-label">Equipe conectada</p>
+              <p className="highlight-value">Dados em tempo real</p>
+              <p className="highlight-note">Dashboard atualizado para gestores.</p>
+            </article>
+          </div>
+        </section>
+
+        <section className="login-card">
+          <p className="eyebrow">Acesso seguro</p>
+          <h2>Entrar na plataforma</h2>
+          <p className="muted">
+            Use seu e-mail corporativo para continuar e acesse os paines do time.
+          </p>
+          <form className="login-form" onSubmit={handleSubmit}>
+            <label className="field">
+              <span>Email</span>
+              <input
+                type="email"
+                placeholder="nome@vogaflex.com.br"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+              />
+            </label>
+            <label className="field">
+              <span>Senha</span>
+              <input
+                type="password"
+                placeholder="Digite sua senha"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+            </label>
+            <div className="login-row">
+              <label className="login-check">
+                <input type="checkbox" />
+                <span>Lembrar acesso</span>
+              </label>
+              <button type="button" className="login-link">
+                Esqueci minha senha
+              </button>
+            </div>
+            <button type="submit" className="login-primary">
+              Entrar
+            </button>
+            <button type="button" className="login-secondary">
+              Solicitar acesso
+            </button>
+          </form>
+          <p className="login-support">
+            Dificuldade para acessar? Fale com o suporte interno da Vogaflex.
+          </p>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function AppContent({ onLogout }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -470,6 +571,19 @@ function App() {
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path
                 d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 15.5a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Zm1.7-5.9c-.7.4-.95.7-.95 1.6h-1.7c0-1.6.55-2.4 1.65-3 1-.5 1.45-.85 1.45-1.6 0-.8-.65-1.35-1.55-1.35-.95 0-1.6.55-1.7 1.4H8.1C8.25 6.5 9.5 5.2 11.8 5.2c2.2 0 3.6 1.2 3.6 3 0 1.5-.8 2.3-1.7 2.8Z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+          <button
+            className="rail-btn rail-btn-logout"
+            type="button"
+            onClick={onLogout}
+            aria-label="Sair"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M5 3h8a2 2 0 0 1 2 2v3h-2V5H5v14h8v-3h2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm10.5 4.5L20 12l-4.5 4.5-1.4-1.4 2.1-2.1H9v-2h7.2l-2.1-2.1 1.4-1.4Z"
                 fill="currentColor"
               />
             </svg>
@@ -887,6 +1001,16 @@ function App() {
       )}
     </div>
   );
+}
+
+function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  if (!isLoggedIn) {
+    return <LoginScreen onLogin={() => setIsLoggedIn(true)} />;
+  }
+
+  return <AppContent onLogout={() => setIsLoggedIn(false)} />;
 }
 
 export default App;
