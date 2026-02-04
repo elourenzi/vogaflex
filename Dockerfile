@@ -24,9 +24,8 @@ RUN pip install --retries 10 -r requirements.txt
 
 COPY . .
 
-# Copia apenas o build do front para onde o Django espera servir estático
-# (ajuste o destino se seu build não cair nesse path)
-COPY --from=frontend /app/frontend/dist /app/dashboard/static/frontend
+# Copia o build do front para onde o Django espera servir estático
+COPY --from=frontend /app/dashboard/static/frontend /app/dashboard/static/frontend
 
 # NÃO roda collectstatic no build (evita quebra por env ausente)
 # Você roda isso no start, quando EasyPanel já injetou SECRET_KEY, DB, etc.
