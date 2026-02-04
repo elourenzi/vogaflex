@@ -6,6 +6,8 @@ const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 0,
 });
 
+const countFormatter = new Intl.NumberFormat("pt-BR");
+
 const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
   dateStyle: "medium",
   timeStyle: "short",
@@ -65,6 +67,13 @@ const splitVendorNameFromContent = (content) => {
 };
 
 const formatCurrency = (value) => currencyFormatter.format(value || 0);
+
+const formatCount = (value) => countFormatter.format(value || 0);
+
+const formatPercent = (value, total) => {
+  if (!total || total <= 0) return "0%";
+  return `${Math.round((value / total) * 100)}%`;
+};
 
 const formatDate = (value) => {
   if (!value) return "--";
@@ -285,6 +294,33 @@ function LoginScreen({ onLogin }) {
   );
 }
 
+function MiniBars({ data, valueKey, color }) {
+  const max = Math.max(
+    ...data.map((entry) => Number(entry?.[valueKey]) || 0),
+    1
+  );
+  return (
+    <div className="mini-chart" aria-hidden="true">
+      {data.map((entry, index) => {
+        const value = Number(entry?.[valueKey]) || 0;
+        const height = Math.round((value / max) * 100);
+        const day = entry.day || `item-${index}`;
+        return (
+          <span
+            key={`${day}-${valueKey}-${index}`}
+            className="mini-bar"
+            style={{
+              height: `${height}%`,
+              background: color,
+            }}
+            title={`${day}: ${value}`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function AppContent({ onLogout }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -304,6 +340,9 @@ function AppContent({ onLogout }) {
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardDateFrom, setDashboardDateFrom] = useState("");
   const [dashboardDateTo, setDashboardDateTo] = useState("");
+  const [dashboardTab, setDashboardTab] = useState("sdr");
+  const [dashboardRange, setDashboardRange] = useState("month");
+  const [dashboardVendor, setDashboardVendor] = useState("");
   const [dashboardFetchVersion, setDashboardFetchVersion] = useState(0);
 
   const loadConversations = async () => {
@@ -484,15 +523,6 @@ function AppContent({ onLogout }) {
 
   const buildDashboardParams = () => {
     const params = new URLSearchParams();
-    if (statusFilter && statusFilter !== "Todos") {
-      params.set("status", statusFilter);
-    }
-    if (etapaFilter && etapaFilter !== "Todos") {
-      params.set("etapa", etapaFilter);
-    }
-    if (vendedorFilter && vendedorFilter !== "Todos") {
-      params.set("vendedor", vendedorFilter);
-    }
     if (dashboardDateFrom) params.set("date_from", dashboardDateFrom);
     if (dashboardDateTo) params.set("date_to", dashboardDateTo);
     if (!dashboardDateFrom && !dashboardDateTo) {
@@ -506,9 +536,31 @@ function AppContent({ onLogout }) {
     return params.toString();
   };
 
+  const applyDashboardPreset = (preset) => {
+    const now = new Date();
+    let start = new Date(now);
+    if (preset === "week") {
+      start.setDate(now.getDate() - 6);
+    } else if (preset === "quarter") {
+      const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
+      start = new Date(now.getFullYear(), quarterStartMonth, 1);
+    } else {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+    const fmt = (date) => date.toISOString().slice(0, 10);
+    setDashboardRange(preset);
+    setDashboardDateFrom(fmt(start));
+    setDashboardDateTo(fmt(now));
+    setDashboardFetchVersion((value) => value + 1);
+  };
+
   useEffect(() => {
     let active = true;
     if (activeView !== "dashboard") return () => {};
+    if (!dashboardDateFrom && !dashboardDateTo) {
+      applyDashboardPreset("month");
+      return () => {};
+    }
     setDashboardLoading(true);
     fetch(`/api/dashboard/?${buildDashboardParams()}`)
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
@@ -532,7 +584,86 @@ function AppContent({ onLogout }) {
   }, [activeView, dashboardFetchVersion]);
 
   const dashboardStats = dashboardData?.stats;
-  const dashboardStages = dashboardData?.stage_counts || [];
+  const sdrData = dashboardData?.sdr;
+  const vendorData = dashboardData?.vendors;
+  const vendorList = vendorData?.summary || [];
+  const vendorScores = vendorData?.scores || {};
+
+  useEffect(() => {
+    if (vendorList.length === 0) return;
+    if (!dashboardVendor || !vendorList.some((item) => item.vendedor === dashboardVendor)) {
+      setDashboardVendor(vendorList[0].vendedor);
+    }
+  }, [dashboardVendor, vendorList]);
+
+  const sdrSeries = useMemo(() => {
+    const map = new Map();
+    (sdrData?.daily || []).forEach((entry) => {
+      if (!entry.day) return;
+      map.set(entry.day, {
+        day: entry.day,
+        contacts: entry.contacts || 0,
+        tracking: entry.tracking || 0,
+        dead: entry.dead || 0,
+        transferred: 0,
+      });
+    });
+    (sdrData?.transferred_daily || []).forEach((entry) => {
+      if (!entry.day) return;
+      const current = map.get(entry.day) || {
+        day: entry.day,
+        contacts: 0,
+        tracking: 0,
+        dead: 0,
+        transferred: 0,
+      };
+      current.transferred = entry.transferred || 0;
+      map.set(entry.day, current);
+    });
+    return [...map.values()].sort((a, b) => a.day.localeCompare(b.day));
+  }, [sdrData]);
+
+  const sdrSummary = sdrData?.summary || {};
+  const sdrTotal = sdrSummary.contacts || 0;
+  const sdrFunnel = [
+    {
+      label: "Contatos",
+      value: sdrSummary.contacts || 0,
+      note: "Base total",
+    },
+    {
+      label: "Rastreio/Vendas",
+      value: sdrSummary.tracking || 0,
+      note: `${formatPercent(sdrSummary.tracking || 0, sdrTotal)} do total`,
+    },
+    {
+      label: "Transferido",
+      value: sdrSummary.transferred || 0,
+      note: `${formatPercent(sdrSummary.transferred || 0, sdrTotal)} do total`,
+    },
+    {
+      label: "Morreu",
+      value: sdrSummary.dead || 0,
+      note: `${formatPercent(sdrSummary.dead || 0, sdrTotal)} do total`,
+    },
+  ];
+
+  const sdrSeriesTrimmed = sdrSeries.slice(-14);
+
+  const vendorTotals = vendorList.reduce(
+    (acc, item) => ({
+      contacts: acc.contacts + (item.contacts_received || 0),
+      budgetsCount: acc.budgetsCount + (item.budgets_count || 0),
+      budgetsSum: acc.budgetsSum + (item.budgets_sum || 0),
+      dead: acc.dead + (item.dead_contacts || 0),
+    }),
+    { contacts: 0, budgetsCount: 0, budgetsSum: 0, dead: 0 }
+  );
+
+  const selectedVendorData = vendorList.find(
+    (item) => item.vendedor === dashboardVendor
+  );
+  const selectedVendorScores = vendorScores?.[dashboardVendor] || [];
 
   return (
     <div className="app-shell">
@@ -918,20 +1049,62 @@ function AppContent({ onLogout }) {
             <div>
               <p className="eyebrow">Vogaflex</p>
               <h2>Dashboard</h2>
-              <p className="muted">Resumo das conversas e desempenho.</p>
+              <p className="muted">Indicadores operacionais do time.</p>
             </div>
           </div>
-          {dashboardLoading ? (
-            <div className="empty">Carregando indicadores...</div>
-          ) : dashboardStats ? (
-            <>
+          <div className="dashboard-shell">
+            <aside className="dashboard-side">
+              <button
+                type="button"
+                className={`dashboard-tab${dashboardTab === "sdr" ? " is-active" : ""}`}
+                onClick={() => setDashboardTab("sdr")}
+              >
+                SDR
+              </button>
+              <button
+                type="button"
+                className={`dashboard-tab${
+                  dashboardTab === "vendors" ? " is-active" : ""
+                }`}
+                onClick={() => setDashboardTab("vendors")}
+              >
+                Vendedores
+              </button>
+            </aside>
+            <div className="dashboard-content">
               <div className="dashboard-filters">
+                <div className="range-buttons">
+                  <button
+                    type="button"
+                    className={`range-btn${dashboardRange === "week" ? " is-active" : ""}`}
+                    onClick={() => applyDashboardPreset("week")}
+                  >
+                    Semana
+                  </button>
+                  <button
+                    type="button"
+                    className={`range-btn${dashboardRange === "month" ? " is-active" : ""}`}
+                    onClick={() => applyDashboardPreset("month")}
+                  >
+                    Mes
+                  </button>
+                  <button
+                    type="button"
+                    className={`range-btn${dashboardRange === "quarter" ? " is-active" : ""}`}
+                    onClick={() => applyDashboardPreset("quarter")}
+                  >
+                    Trimestre
+                  </button>
+                </div>
                 <label className="field">
                   <span>De</span>
                   <input
                     type="date"
                     value={dashboardDateFrom}
-                    onChange={(event) => setDashboardDateFrom(event.target.value)}
+                    onChange={(event) => {
+                      setDashboardRange("custom");
+                      setDashboardDateFrom(event.target.value);
+                    }}
                   />
                 </label>
                 <label className="field">
@@ -939,7 +1112,10 @@ function AppContent({ onLogout }) {
                   <input
                     type="date"
                     value={dashboardDateTo}
-                    onChange={(event) => setDashboardDateTo(event.target.value)}
+                    onChange={(event) => {
+                      setDashboardRange("custom");
+                      setDashboardDateTo(event.target.value);
+                    }}
                   />
                 </label>
                 <button
@@ -950,53 +1126,256 @@ function AppContent({ onLogout }) {
                   Aplicar periodo
                 </button>
               </div>
-              <div className="dashboard-grid">
-                <article className="stat-card">
-                  <p className="stat-label">Tempo medio</p>
-                  <p className="stat-value">
-                    {formatDuration(dashboardStats.avg_duration_seconds)}
-                  </p>
-                  <p className="stat-foot">Duracao da conversa</p>
-                </article>
-                <article className="stat-card">
-                  <p className="stat-label">Tempo SLA</p>
-                  <p className="stat-value">
-                    {formatDuration(dashboardStats.avg_handoff_seconds)}
-                  </p>
-                  <p className="stat-foot">IA transfere → vendedor assume</p>
-                </article>
-              </div>
-              <div className="dashboard-bars">
-                <h3>Conversas por etapa do funil</h3>
-                {dashboardStages.length === 0 ? (
-                  <p className="empty">Sem dados de funil.</p>
-                ) : (
-                  <div className="bar-list">
-                    {(() => {
-                      const max = Math.max(...dashboardStages.map((s) => s.total), 1);
-                      return dashboardStages.map((stage) => {
-                        const width = Math.round((stage.total / max) * 100);
-                        return (
-                          <div className="bar-row" key={stage.stage_name}>
-                            <span className="bar-label">{stage.stage_name}</span>
-                            <div className="bar-track">
-                              <div
-                                className="bar-fill"
-                                style={{ width: `${width}%` }}
-                              />
-                            </div>
-                            <span className="bar-value">{stage.total}</span>
+              {dashboardLoading ? (
+                <div className="empty">Carregando indicadores...</div>
+              ) : dashboardData ? (
+                <>
+                  {dashboardTab === "sdr" ? (
+                    <>
+                      <div className="dashboard-section">
+                        <div className="section-head">
+                          <h3>Resumo SDR</h3>
+                          <p className="muted">Leitura do funil de novos contatos.</p>
+                        </div>
+                        <div className="funnel-grid">
+                          {sdrFunnel.map((item) => (
+                            <article className="funnel-step" key={item.label}>
+                              <p className="stat-label">{item.label}</p>
+                              <p className="stat-value">{formatCount(item.value)}</p>
+                              <p className="stat-foot">{item.note}</p>
+                            </article>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="dashboard-section">
+                        <div className="section-head">
+                          <h3>Historico diario</h3>
+                          <p className="muted">Ultimos 14 dias do periodo.</p>
+                        </div>
+                        <div className="metric-grid">
+                          <article className="metric-card">
+                            <p className="stat-label">Novos contatos</p>
+                            <p className="stat-value">
+                              {formatCount(sdrSummary.contacts || 0)}
+                            </p>
+                            <MiniBars
+                              data={sdrSeriesTrimmed}
+                              valueKey="contacts"
+                              color="var(--accent)"
+                            />
+                          </article>
+                          <article className="metric-card">
+                            <p className="stat-label">Rastreio/Vendas</p>
+                            <p className="stat-value">
+                              {formatCount(sdrSummary.tracking || 0)}
+                            </p>
+                            <MiniBars
+                              data={sdrSeriesTrimmed}
+                              valueKey="tracking"
+                              color="rgba(47, 48, 61, 0.75)"
+                            />
+                          </article>
+                          <article className="metric-card">
+                            <p className="stat-label">Transferidos</p>
+                            <p className="stat-value">
+                              {formatCount(sdrSummary.transferred || 0)}
+                            </p>
+                            <MiniBars
+                              data={sdrSeriesTrimmed}
+                              valueKey="transferred"
+                              color="rgba(200, 38, 80, 0.55)"
+                            />
+                          </article>
+                          <article className="metric-card">
+                            <p className="stat-label">Morreram</p>
+                            <p className="stat-value">
+                              {formatCount(sdrSummary.dead || 0)}
+                            </p>
+                            <MiniBars
+                              data={sdrSeriesTrimmed}
+                              valueKey="dead"
+                              color="rgba(148, 159, 166, 0.8)"
+                            />
+                          </article>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="dashboard-section">
+                        <div className="section-head">
+                          <h3>Painel geral comparativo</h3>
+                          <p className="muted">Resumo consolidado da equipe.</p>
+                        </div>
+                        <div className="metric-grid">
+                          <article className="metric-card">
+                            <p className="stat-label">Contatos recebidos</p>
+                            <p className="stat-value">{formatCount(vendorTotals.contacts)}</p>
+                            <p className="stat-foot">Base do periodo</p>
+                          </article>
+                          <article className="metric-card">
+                            <p className="stat-label">Orcamentos</p>
+                            <p className="stat-value">{formatCount(vendorTotals.budgetsCount)}</p>
+                            <p className="stat-foot">
+                              {formatPercent(vendorTotals.budgetsCount, vendorTotals.contacts)} de conversao
+                            </p>
+                          </article>
+                          <article className="metric-card">
+                            <p className="stat-label">Somatoria orcada</p>
+                            <p className="stat-value">{formatCurrency(vendorTotals.budgetsSum)}</p>
+                            <p className="stat-foot">Volume financeiro</p>
+                          </article>
+                          <article className="metric-card">
+                            <p className="stat-label">TMA</p>
+                            <p className="stat-value">
+                              {formatDuration(dashboardStats?.avg_duration_seconds || 0)}
+                            </p>
+                            <p className="stat-foot">Tempo medio atendimento</p>
+                          </article>
+                          <article className="metric-card">
+                            <p className="stat-label">TME</p>
+                            <p className="stat-value">
+                              {formatDuration(dashboardStats?.avg_handoff_seconds || 0)}
+                            </p>
+                            <p className="stat-foot">SLA bot → vendedor</p>
+                          </article>
+                          <article className="metric-card">
+                            <p className="stat-label">Contatos mortos</p>
+                            <p className="stat-value">{formatCount(vendorTotals.dead)}</p>
+                            <p className="stat-foot">Sem resposta</p>
+                          </article>
+                        </div>
+                      </div>
+                      <div className="dashboard-section">
+                        <div className="section-head">
+                          <h3>Comparativo por vendedor</h3>
+                          <p className="muted">Selecione um vendedor para detalhes.</p>
+                        </div>
+                        <div className="vendor-layout">
+                          <div className="vendor-list">
+                            {vendorList.length === 0 ? (
+                              <p className="empty">Sem vendedores no periodo.</p>
+                            ) : (
+                              vendorList.map((vendor) => (
+                                <button
+                                  key={vendor.vendedor}
+                                  type="button"
+                                  className={`vendor-item${
+                                    dashboardVendor === vendor.vendedor ? " is-active" : ""
+                                  }`}
+                                  onClick={() => setDashboardVendor(vendor.vendedor)}
+                                >
+                                  <div className="vendor-name">{vendor.vendedor}</div>
+                                  <div className="vendor-meta">
+                                    {formatCount(vendor.contacts_received)} contatos ·{" "}
+                                    {formatPercent(
+                                      vendor.budgets_count || 0,
+                                      vendor.contacts_received || 0
+                                    )} orcamentos
+                                  </div>
+                                </button>
+                              ))
+                            )}
                           </div>
-                        );
-                      });
-                    })()}
-                  </div>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="empty">Sem dados para o periodo.</div>
-          )}
+                          <div className="vendor-detail">
+                            {!selectedVendorData ? (
+                              <p className="empty">Selecione um vendedor.</p>
+                            ) : (
+                              <>
+                                <div className="vendor-header">
+                                  <h3>{selectedVendorData.vendedor}</h3>
+                                  <span className="tag">
+                                    {formatCount(selectedVendorData.contacts_received)} contatos
+                                  </span>
+                                </div>
+                                <div className="funnel-grid">
+                                  {[
+                                    {
+                                      label: "Contatos",
+                                      value: selectedVendorData.contacts_received || 0,
+                                      note: "Base do vendedor",
+                                    },
+                                    {
+                                      label: "Orcamentos",
+                                      value: selectedVendorData.budgets_count || 0,
+                                      note: `${formatPercent(
+                                        selectedVendorData.budgets_count || 0,
+                                        selectedVendorData.contacts_received || 0
+                                      )} de conversao`,
+                                    },
+                                    {
+                                      label: "Morreu",
+                                      value: selectedVendorData.dead_contacts || 0,
+                                      note: `${formatPercent(
+                                        selectedVendorData.dead_contacts || 0,
+                                        selectedVendorData.contacts_received || 0
+                                      )} do total`,
+                                    },
+                                  ].map((item) => (
+                                    <article className="funnel-step" key={item.label}>
+                                      <p className="stat-label">{item.label}</p>
+                                      <p className="stat-value">
+                                        {formatCount(item.value)}
+                                      </p>
+                                      <p className="stat-foot">{item.note}</p>
+                                    </article>
+                                  ))}
+                                </div>
+                                <div className="vendor-metrics">
+                                  <article className="metric-card">
+                                    <p className="stat-label">TMA</p>
+                                    <p className="stat-value">
+                                      {formatDuration(
+                                        selectedVendorData.avg_duration_seconds || 0
+                                      )}
+                                    </p>
+                                    <p className="stat-foot">Tempo medio</p>
+                                  </article>
+                                  <article className="metric-card">
+                                    <p className="stat-label">TME</p>
+                                    <p className="stat-value">
+                                      {formatDuration(
+                                        selectedVendorData.avg_handoff_seconds || 0
+                                      )}
+                                    </p>
+                                    <p className="stat-foot">Tempo de espera</p>
+                                  </article>
+                                  <article className="metric-card">
+                                    <p className="stat-label">Somatoria orcada</p>
+                                    <p className="stat-value">
+                                      {formatCurrency(selectedVendorData.budgets_sum || 0)}
+                                    </p>
+                                    <p className="stat-foot">Valor total</p>
+                                  </article>
+                                </div>
+                                <div className="score-panel">
+                                  <h4>Score do bot</h4>
+                                  {selectedVendorScores.length === 0 ? (
+                                    <p className="empty">Sem scores no periodo.</p>
+                                  ) : (
+                                    <div className="score-grid">
+                                      {selectedVendorScores.map((score) => (
+                                        <div className="score-chip" key={score.score}>
+                                          <span>{score.score}</span>
+                                          <strong>{formatCount(score.total)}</strong>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="empty">Sem dados para o periodo.</div>
+              )}
+            </div>
+          </div>
         </section>
       )}
     </div>

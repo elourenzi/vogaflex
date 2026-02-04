@@ -389,7 +389,329 @@ def dashboard_api(request):
             stage_counts = [
                 {"stage_name": row[0], "total": row[1]} for row in stage_rows
             ]
-        return JsonResponse({"stats": stats, "stage_counts": stage_counts})
+            sdr_summary_query = f"""
+                WITH filtered AS (
+                  SELECT *
+                  FROM conversations c
+                  {where_sql}
+                ),
+                message_stats AS (
+                  SELECT
+                    m.chat_id,
+                    SUM(CASE WHEN m.from_client = false THEN 1 ELSE 0 END) AS outbound_count,
+                    SUM(CASE WHEN m.from_client = true THEN 1 ELSE 0 END) AS inbound_count
+                  FROM messages m
+                  JOIN filtered f ON f.chat_id = m.chat_id
+                  GROUP BY m.chat_id
+                ),
+                bot_events AS (
+                  SELECT
+                    m.chat_id,
+                    MIN(m."timestamp") AS bot_transfer_ts
+                  FROM messages m
+                  JOIN filtered f ON f.chat_id = m.chat_id
+                  WHERE m.from_client = false
+                    AND m.content IS NOT NULL
+                    AND (
+                      m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                      OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                      OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
+                    )
+                  GROUP BY m.chat_id
+                )
+                SELECT
+                  COUNT(*) AS total_contacts,
+                  COUNT(*) FILTER (WHERE f.attendant_name IS NOT NULL) AS total_tracking,
+                  COUNT(*) FILTER (WHERE b.bot_transfer_ts IS NOT NULL) AS total_transferred,
+                  COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS total_dead
+                FROM filtered f
+                LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
+                LEFT JOIN bot_events b ON b.chat_id = f.chat_id;
+            """
+
+            sdr_daily_query = f"""
+                WITH filtered AS (
+                  SELECT *
+                  FROM conversations c
+                  {where_sql}
+                ),
+                message_stats AS (
+                  SELECT
+                    m.chat_id,
+                    SUM(CASE WHEN m.from_client = false THEN 1 ELSE 0 END) AS outbound_count
+                  FROM messages m
+                  JOIN filtered f ON f.chat_id = m.chat_id
+                  GROUP BY m.chat_id
+                )
+                SELECT
+                  date_trunc('day', COALESCE(f.start_time, f.created_at) AT TIME ZONE 'America/Sao_Paulo')::date AS day,
+                  COUNT(*) AS contacts,
+                  COUNT(*) FILTER (WHERE f.attendant_name IS NOT NULL) AS tracking,
+                  COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS dead
+                FROM filtered f
+                LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
+                GROUP BY day
+                ORDER BY day;
+            """
+
+            sdr_transferred_daily_query = f"""
+                WITH filtered AS (
+                  SELECT *
+                  FROM conversations c
+                  {where_sql}
+                ),
+                bot_events AS (
+                  SELECT
+                    m.chat_id,
+                    MIN(m."timestamp") AS bot_transfer_ts
+                  FROM messages m
+                  JOIN filtered f ON f.chat_id = m.chat_id
+                  WHERE m.from_client = false
+                    AND m.content IS NOT NULL
+                    AND (
+                      m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                      OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                      OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
+                    )
+                  GROUP BY m.chat_id
+                )
+                SELECT
+                  date_trunc('day', b.bot_transfer_ts AT TIME ZONE 'America/Sao_Paulo')::date AS day,
+                  COUNT(*) AS transferred
+                FROM bot_events b
+                JOIN filtered f ON f.chat_id = b.chat_id
+                GROUP BY day
+                ORDER BY day;
+            """
+
+            vendor_summary_query = f"""
+                WITH filtered AS (
+                  SELECT *
+                  FROM conversations c
+                  {where_sql}
+                ),
+                bot_events AS (
+                  SELECT
+                    m.chat_id,
+                    MIN(m."timestamp") AS bot_transfer_ts
+                  FROM messages m
+                  JOIN filtered f ON f.chat_id = m.chat_id
+                  WHERE m.from_client = false
+                    AND m.content IS NOT NULL
+                    AND (
+                      m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                      OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                      OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
+                    )
+                  GROUP BY m.chat_id
+                ),
+                message_stats AS (
+                  SELECT
+                    m.chat_id,
+                    SUM(CASE WHEN m.from_client = false THEN 1 ELSE 0 END) AS outbound_count,
+                    MIN(m."timestamp") FILTER (WHERE m.from_client = true) AS first_client_ts
+                  FROM messages m
+                  JOIN filtered f ON f.chat_id = m.chat_id
+                  GROUP BY m.chat_id
+                ),
+                business_duration AS (
+                  SELECT
+                    ms.chat_id,
+                    SUM(
+                      GREATEST(
+                        0,
+                        EXTRACT(
+                          EPOCH FROM (
+                            LEAST(f.end_time AT TIME ZONE 'America/Sao_Paulo', day_end)
+                            - GREATEST(ms.first_client_ts AT TIME ZONE 'America/Sao_Paulo', day_start)
+                          )
+                        )
+                      )
+                    ) AS business_seconds
+                  FROM message_stats ms
+                  JOIN filtered f ON f.chat_id = ms.chat_id
+                  JOIN LATERAL (
+                    SELECT
+                      day::timestamp + time '08:00' AS day_start,
+                      day::timestamp + time '18:00' AS day_end
+                    FROM generate_series(
+                      date_trunc('day', ms.first_client_ts AT TIME ZONE 'America/Sao_Paulo'),
+                      date_trunc('day', f.end_time AT TIME ZONE 'America/Sao_Paulo'),
+                      interval '1 day'
+                    ) AS day
+                    WHERE EXTRACT(DOW FROM day) BETWEEN 1 AND 5
+                  ) d ON TRUE
+                  WHERE ms.first_client_ts IS NOT NULL AND f.end_time IS NOT NULL
+                  GROUP BY ms.chat_id
+                ),
+                human_events AS (
+                  SELECT
+                    m.chat_id,
+                    MIN(m."timestamp") AS first_human_ts
+                  FROM messages m
+                  JOIN bot_events b ON b.chat_id = m.chat_id
+                  WHERE m.from_client = false
+                    AND m."timestamp" > b.bot_transfer_ts
+                    AND (
+                      m.content IS NULL OR (
+                        m.content NOT ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        AND m.content NOT ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        AND m.content NOT ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                        AND m.content NOT ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                        AND m.content NOT ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                        AND m.content NOT ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                        AND m.content NOT ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                        AND m.content NOT ILIKE '%%atendimento ao nosso setor de vendas.%%'
+                      )
+                    )
+                  GROUP BY m.chat_id
+                ),
+                business_handoff AS (
+                  SELECT
+                    b.chat_id,
+                    SUM(
+                      GREATEST(
+                        0,
+                        EXTRACT(
+                          EPOCH FROM (
+                            LEAST(h.first_human_ts AT TIME ZONE 'America/Sao_Paulo', day_end)
+                            - GREATEST(b.bot_transfer_ts AT TIME ZONE 'America/Sao_Paulo', day_start)
+                          )
+                        )
+                      )
+                    ) AS business_seconds
+                  FROM bot_events b
+                  JOIN human_events h ON h.chat_id = b.chat_id
+                  JOIN LATERAL (
+                    SELECT
+                      day::timestamp + time '08:00' AS day_start,
+                      day::timestamp + time '18:00' AS day_end
+                    FROM generate_series(
+                      date_trunc('day', b.bot_transfer_ts AT TIME ZONE 'America/Sao_Paulo'),
+                      date_trunc('day', h.first_human_ts AT TIME ZONE 'America/Sao_Paulo'),
+                      interval '1 day'
+                    ) AS day
+                    WHERE EXTRACT(DOW FROM day) BETWEEN 1 AND 5
+                  ) d ON TRUE
+                  GROUP BY b.chat_id
+                )
+                SELECT
+                  f.attendant_name AS vendedor,
+                  COUNT(*) AS contacts_received,
+                  COUNT(*) FILTER (WHERE f.budget_value > 0) AS budgets_count,
+                  COALESCE(SUM(CASE WHEN f.budget_value > 0 THEN f.budget_value ELSE 0 END), 0) AS budgets_sum,
+                  COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS dead_contacts,
+                  AVG(bd.business_seconds) AS avg_duration_seconds,
+                  AVG(bh.business_seconds) AS avg_handoff_seconds
+                FROM filtered f
+                LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
+                LEFT JOIN business_duration bd ON bd.chat_id = f.chat_id
+                LEFT JOIN business_handoff bh ON bh.chat_id = f.chat_id
+                WHERE f.attendant_name IS NOT NULL
+                GROUP BY f.attendant_name
+                ORDER BY contacts_received DESC;
+            """
+
+            vendor_scores_query = f"""
+                WITH filtered AS (
+                  SELECT *
+                  FROM conversations c
+                  {where_sql}
+                )
+                SELECT
+                  f.attendant_name AS vendedor,
+                  COALESCE(CAST(f.ai_agent_rating AS TEXT), 'Sem score') AS score,
+                  COUNT(*) AS total
+                FROM filtered f
+                WHERE f.attendant_name IS NOT NULL
+                GROUP BY f.attendant_name, score
+                ORDER BY f.attendant_name, score;
+            """
+
+            cursor.execute(sdr_summary_query, params)
+            sdr_row = cursor.fetchone() or (0, 0, 0, 0)
+            sdr_summary = {
+                "contacts": sdr_row[0] or 0,
+                "tracking": sdr_row[1] or 0,
+                "transferred": sdr_row[2] or 0,
+                "dead": sdr_row[3] or 0,
+            }
+
+            cursor.execute(sdr_daily_query, params)
+            sdr_daily_rows = cursor.fetchall()
+            sdr_daily = [
+                {
+                    "day": row[0].isoformat() if row[0] else None,
+                    "contacts": row[1],
+                    "tracking": row[2],
+                    "dead": row[3],
+                }
+                for row in sdr_daily_rows
+            ]
+
+            cursor.execute(sdr_transferred_daily_query, params)
+            transferred_rows = cursor.fetchall()
+            sdr_transferred_daily = [
+                {
+                    "day": row[0].isoformat() if row[0] else None,
+                    "transferred": row[1],
+                }
+                for row in transferred_rows
+            ]
+
+            cursor.execute(vendor_summary_query, params)
+            vendor_rows = cursor.fetchall()
+            vendors = [
+                {
+                    "vendedor": row[0],
+                    "contacts_received": row[1],
+                    "budgets_count": row[2],
+                    "budgets_sum": float(row[3]) if row[3] is not None else 0,
+                    "dead_contacts": row[4],
+                    "avg_duration_seconds": float(row[5]) if row[5] is not None else 0,
+                    "avg_handoff_seconds": float(row[6]) if row[6] is not None else 0,
+                }
+                for row in vendor_rows
+            ]
+
+            cursor.execute(vendor_scores_query, params)
+            score_rows = cursor.fetchall()
+            vendor_scores = {}
+            for vendedor, score, total in score_rows:
+                vendor_scores.setdefault(vendedor, []).append(
+                    {"score": score, "total": total}
+                )
+
+        return JsonResponse(
+            {
+                "stats": stats,
+                "stage_counts": stage_counts,
+                "sdr": {
+                    "summary": sdr_summary,
+                    "daily": sdr_daily,
+                    "transferred_daily": sdr_transferred_daily,
+                },
+                "vendors": {
+                    "summary": vendors,
+                    "scores": vendor_scores,
+                },
+            }
+        )
     except Exception as exc:
         return JsonResponse({"error": str(exc)}, status=500)
 
