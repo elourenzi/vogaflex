@@ -56,6 +56,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "vogaflex.wsgi.application"
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+DB_CONN_MAX_AGE = int(os.getenv("DB_CONN_MAX_AGE", "60" if DATABASE_URL else "0"))
 if DATABASE_URL:
     parsed = urlparse(DATABASE_URL)
     DATABASES = {
@@ -66,6 +67,7 @@ if DATABASE_URL:
             "PASSWORD": parsed.password or "",
             "HOST": parsed.hostname or "",
             "PORT": str(parsed.port or 5432),
+            "CONN_MAX_AGE": DB_CONN_MAX_AGE,
             "OPTIONS": {
                 "sslmode": os.getenv("DB_SSLMODE", "prefer"),
             },
@@ -76,6 +78,7 @@ else:
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
+            "CONN_MAX_AGE": DB_CONN_MAX_AGE,
         }
     }
 
