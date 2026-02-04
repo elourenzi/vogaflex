@@ -10,7 +10,7 @@
       content="Painel limpo e acessivel para acompanhar orcamentos, conversas e historico de vendas."
     />
     {% if not debug %}
-      {% vite_css 'src/main.jsx' as css_file %}
+      {% vite_css 'index.html' as css_file %}
       {% if css_file %}
         <link rel="stylesheet" href="{% static css_file %}" />
       {% endif %}
@@ -23,7 +23,7 @@
       <script type="module" src="http://localhost:5173/@vite/client"></script>
       <script type="module" src="http://localhost:5173/src/main.jsx"></script>
     {% else %}
-      {% vite_asset 'src/main.jsx' as js_file %}
+      {% vite_asset 'index.html' as js_file %}
       {% if js_file %}
         <script type="module" src="{% static js_file %}"></script>
       {% endif %}

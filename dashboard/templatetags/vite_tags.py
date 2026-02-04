@@ -15,16 +15,34 @@ def _load_manifest():
     return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
+def _normalize_entry(entry, manifest):
+    if entry in manifest:
+        return entry
+    if "index.html" in manifest:
+        return "index.html"
+    return entry
+
+
+def _prefix_frontend(path):
+    if not path:
+        return ""
+    if path.startswith("frontend/"):
+        return path
+    return f"frontend/{path}"
+
+
 @register.simple_tag
 def vite_asset(entry):
     manifest = _load_manifest()
-    data = manifest.get(entry, {})
-    return data.get("file", "")
+    entry_key = _normalize_entry(entry, manifest)
+    data = manifest.get(entry_key, {})
+    return _prefix_frontend(data.get("file", ""))
 
 
 @register.simple_tag
 def vite_css(entry):
     manifest = _load_manifest()
-    data = manifest.get(entry, {})
+    entry_key = _normalize_entry(entry, manifest)
+    data = manifest.get(entry_key, {})
     css_files = data.get("css", [])
-    return css_files[0] if css_files else ""
+    return _prefix_frontend(css_files[0]) if css_files else ""
