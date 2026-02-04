@@ -23,7 +23,10 @@
       <script type="module" src="http://localhost:5173/@vite/client"></script>
       <script type="module" src="http://localhost:5173/src/main.jsx"></script>
     {% else %}
-      <script type="module" src="{% static vite_asset 'src/main.jsx' %}"></script>
+      {% vite_asset 'src/main.jsx' as js_file %}
+      {% if js_file %}
+        <script type="module" src="{% static js_file %}"></script>
+      {% endif %}
     {% endif %}
   </body>
 </html>
