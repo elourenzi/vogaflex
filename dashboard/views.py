@@ -529,12 +529,22 @@ def dashboard_api(request):
                   JOIN filtered f ON f.chat_id = m.chat_id
                   GROUP BY m.chat_id
                 ),
-                budget_messages AS (
+                budget_values AS (
                   SELECT
                     m.chat_id,
-                    BOOL_OR(m.content ~* 'R\\$\\s*\\d') AS has_budget_msg
+                    MAX(
+                      NULLIF(
+                        REPLACE(REPLACE((matches)[1], '.', ''), ',', '.'),
+                        ''
+                      )::numeric
+                    ) AS max_budget_msg
                   FROM messages m
                   JOIN filtered f ON f.chat_id = m.chat_id
+                  JOIN LATERAL regexp_matches(
+                    m.content,
+                    'R\\$\\s*([0-9\\.]+(?:,[0-9]{2})?)',
+                    'g'
+                  ) AS matches ON TRUE
                   WHERE m.content IS NOT NULL
                   GROUP BY m.chat_id
                 ),
@@ -624,9 +634,18 @@ def dashboard_api(request):
                   COUNT(*) AS contacts_received,
                   COUNT(*) FILTER (WHERE f.budget_value > 0) AS budgets_count,
                   COUNT(*) FILTER (
-                    WHERE f.budget_value > 0 OR COALESCE(bm.has_budget_msg, false)
+                    WHERE f.budget_value > 0 OR bv.max_budget_msg IS NOT NULL
                   ) AS budgets_detected_count,
                   COALESCE(SUM(CASE WHEN f.budget_value > 0 THEN f.budget_value ELSE 0 END), 0) AS budgets_sum,
+                  COALESCE(
+                    SUM(
+                      CASE
+                        WHEN f.budget_value > 0 THEN 0
+                        ELSE COALESCE(bv.max_budget_msg, 0)
+                      END
+                    ),
+                    0
+                  ) AS budgets_sum_detected,
                   COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS dead_contacts,
                   AVG(bd.business_seconds) AS avg_duration_seconds,
                   AVG(bh.business_seconds) AS avg_handoff_seconds,
@@ -638,7 +657,7 @@ def dashboard_api(request):
                   ) AS avg_score
                 FROM filtered f
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
-                LEFT JOIN budget_messages bm ON bm.chat_id = f.chat_id
+                LEFT JOIN budget_values bv ON bv.chat_id = f.chat_id
                 LEFT JOIN business_duration bd ON bd.chat_id = f.chat_id
                 LEFT JOIN business_handoff bh ON bh.chat_id = f.chat_id
                 WHERE f.attendant_name IS NOT NULL
@@ -702,10 +721,11 @@ def dashboard_api(request):
                     "budgets_count": row[2],
                     "budgets_detected_count": row[3],
                     "budgets_sum": float(row[4]) if row[4] is not None else 0,
-                    "dead_contacts": row[5],
-                    "avg_duration_seconds": float(row[6]) if row[6] is not None else 0,
-                    "avg_handoff_seconds": float(row[7]) if row[7] is not None else 0,
-                    "avg_score": float(row[8]) if row[8] is not None else 0,
+                    "budgets_sum_detected": float(row[5]) if row[5] is not None else 0,
+                    "dead_contacts": row[6],
+                    "avg_duration_seconds": float(row[7]) if row[7] is not None else 0,
+                    "avg_handoff_seconds": float(row[8]) if row[8] is not None else 0,
+                    "avg_score": float(row[9]) if row[9] is not None else 0,
                 }
                 for row in vendor_rows
             ]

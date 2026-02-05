@@ -661,9 +661,11 @@ function AppContent({ onLogout }) {
       budgetsCount:
         acc.budgetsCount + (item.budgets_detected_count || item.budgets_count || 0),
       budgetsSum: acc.budgetsSum + (item.budgets_sum || 0),
+      budgetsSumDetected:
+        acc.budgetsSumDetected + (item.budgets_sum_detected || 0),
       dead: acc.dead + (item.dead_contacts || 0),
     }),
-    { contacts: 0, budgetsCount: 0, budgetsSum: 0, dead: 0 }
+    { contacts: 0, budgetsCount: 0, budgetsSum: 0, budgetsSumDetected: 0, dead: 0 }
   );
 
   const selectedVendorData = vendorList.find(
@@ -1232,6 +1234,13 @@ function AppContent({ onLogout }) {
                             <p className="stat-foot">Volume financeiro</p>
                           </article>
                           <article className="metric-card">
+                            <p className="stat-label">Somatoria orcada (mensagens)</p>
+                            <p className="stat-value">
+                              {formatCurrency(vendorTotals.budgetsSumDetected)}
+                            </p>
+                            <p className="stat-foot">Nao registrado no CRM</p>
+                          </article>
+                          <article className="metric-card">
                             <p className="stat-label">TMA</p>
                             <p className="stat-value">
                               {formatDuration(dashboardStats?.avg_duration_seconds || 0)}
@@ -1364,6 +1373,15 @@ function AppContent({ onLogout }) {
                                       {formatCurrency(selectedVendorData.budgets_sum || 0)}
                                     </p>
                                     <p className="stat-foot">Valor total</p>
+                                  </article>
+                                  <article className="metric-card">
+                                    <p className="stat-label">Somatoria orcada (mensagens)</p>
+                                    <p className="stat-value">
+                                      {formatCurrency(
+                                        selectedVendorData.budgets_sum_detected || 0
+                                      )}
+                                    </p>
+                                    <p className="stat-foot">Nao registrado no CRM</p>
                                   </article>
                                 </div>
                                 <div className="score-panel">
