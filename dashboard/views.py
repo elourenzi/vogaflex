@@ -529,6 +529,15 @@ def dashboard_api(request):
                   JOIN filtered f ON f.chat_id = m.chat_id
                   GROUP BY m.chat_id
                 ),
+                budget_messages AS (
+                  SELECT
+                    m.chat_id,
+                    BOOL_OR(m.content ~* 'R\\$\\s*\\d') AS has_budget_msg
+                  FROM messages m
+                  JOIN filtered f ON f.chat_id = m.chat_id
+                  WHERE m.content IS NOT NULL
+                  GROUP BY m.chat_id
+                ),
                 business_duration AS (
                   SELECT
                     ms.chat_id,
@@ -614,6 +623,9 @@ def dashboard_api(request):
                   f.attendant_name AS vendedor,
                   COUNT(*) AS contacts_received,
                   COUNT(*) FILTER (WHERE f.budget_value > 0) AS budgets_count,
+                  COUNT(*) FILTER (
+                    WHERE f.budget_value > 0 OR COALESCE(bm.has_budget_msg, false)
+                  ) AS budgets_detected_count,
                   COALESCE(SUM(CASE WHEN f.budget_value > 0 THEN f.budget_value ELSE 0 END), 0) AS budgets_sum,
                   COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS dead_contacts,
                   AVG(bd.business_seconds) AS avg_duration_seconds,
@@ -626,6 +638,7 @@ def dashboard_api(request):
                   ) AS avg_score
                 FROM filtered f
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
+                LEFT JOIN budget_messages bm ON bm.chat_id = f.chat_id
                 LEFT JOIN business_duration bd ON bd.chat_id = f.chat_id
                 LEFT JOIN business_handoff bh ON bh.chat_id = f.chat_id
                 WHERE f.attendant_name IS NOT NULL
@@ -687,11 +700,12 @@ def dashboard_api(request):
                     "vendedor": row[0],
                     "contacts_received": row[1],
                     "budgets_count": row[2],
-                    "budgets_sum": float(row[3]) if row[3] is not None else 0,
-                    "dead_contacts": row[4],
-                    "avg_duration_seconds": float(row[5]) if row[5] is not None else 0,
-                    "avg_handoff_seconds": float(row[6]) if row[6] is not None else 0,
-                    "avg_score": float(row[7]) if row[7] is not None else 0,
+                    "budgets_detected_count": row[3],
+                    "budgets_sum": float(row[4]) if row[4] is not None else 0,
+                    "dead_contacts": row[5],
+                    "avg_duration_seconds": float(row[6]) if row[6] is not None else 0,
+                    "avg_handoff_seconds": float(row[7]) if row[7] is not None else 0,
+                    "avg_score": float(row[8]) if row[8] is not None else 0,
                 }
                 for row in vendor_rows
             ]

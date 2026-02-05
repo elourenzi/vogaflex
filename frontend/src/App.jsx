@@ -658,7 +658,8 @@ function AppContent({ onLogout }) {
   const vendorTotals = vendorList.reduce(
     (acc, item) => ({
       contacts: acc.contacts + (item.contacts_received || 0),
-      budgetsCount: acc.budgetsCount + (item.budgets_count || 0),
+      budgetsCount:
+        acc.budgetsCount + (item.budgets_detected_count || item.budgets_count || 0),
       budgetsSum: acc.budgetsSum + (item.budgets_sum || 0),
       dead: acc.dead + (item.dead_contacts || 0),
     }),
@@ -1219,14 +1220,14 @@ function AppContent({ onLogout }) {
                             <p className="stat-foot">Base do periodo</p>
                           </article>
                           <article className="metric-card">
-                            <p className="stat-label">Orcamentos</p>
+                            <p className="stat-label">Orcamentos detectados</p>
                             <p className="stat-value">{formatCount(vendorTotals.budgetsCount)}</p>
                             <p className="stat-foot">
                               {formatPercent(vendorTotals.budgetsCount, vendorTotals.contacts)} de conversao
                             </p>
                           </article>
                           <article className="metric-card">
-                            <p className="stat-label">Somatoria orcada</p>
+                            <p className="stat-label">Somatoria orcada (registrado)</p>
                             <p className="stat-value">{formatCurrency(vendorTotals.budgetsSum)}</p>
                             <p className="stat-foot">Volume financeiro</p>
                           </article>
@@ -1274,7 +1275,7 @@ function AppContent({ onLogout }) {
                                   <div className="vendor-meta">
                                     {formatCount(vendor.contacts_received)} contatos ·{" "}
                                     {formatPercent(
-                                      vendor.budgets_count || 0,
+                                      vendor.budgets_detected_count || vendor.budgets_count || 0,
                                       vendor.contacts_received || 0
                                     )} orcamentos · IA {formatScore(vendor.avg_score || 0)}
                                   </div>
@@ -1301,10 +1302,15 @@ function AppContent({ onLogout }) {
                                       note: "Base do vendedor",
                                     },
                                     {
-                                      label: "Orcamentos",
-                                      value: selectedVendorData.budgets_count || 0,
+                                      label: "Orcamentos detectados",
+                                      value:
+                                        selectedVendorData.budgets_detected_count ||
+                                        selectedVendorData.budgets_count ||
+                                        0,
                                       note: `${formatPercent(
-                                        selectedVendorData.budgets_count || 0,
+                                        selectedVendorData.budgets_detected_count ||
+                                          selectedVendorData.budgets_count ||
+                                          0,
                                         selectedVendorData.contacts_received || 0
                                       )} de conversao`,
                                     },
@@ -1353,7 +1359,7 @@ function AppContent({ onLogout }) {
                                     <p className="stat-foot">Media 0-10</p>
                                   </article>
                                   <article className="metric-card">
-                                    <p className="stat-label">Somatoria orcada</p>
+                                    <p className="stat-label">Somatoria orcada (registrado)</p>
                                     <p className="stat-value">
                                       {formatCurrency(selectedVendorData.budgets_sum || 0)}
                                     </p>
