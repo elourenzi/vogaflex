@@ -100,6 +100,11 @@ const formatDuration = (seconds) => {
   return `${minutes}m`;
 };
 
+const formatScore = (value) => {
+  if (!Number.isFinite(value) || value <= 0) return "--";
+  return value.toFixed(1);
+};
+
 const messagePlaceholder = (messageType) => {
   const type = normalizeText(messageType);
   if (type === "image") return "[Imagem]";
@@ -1271,7 +1276,7 @@ function AppContent({ onLogout }) {
                                     {formatPercent(
                                       vendor.budgets_count || 0,
                                       vendor.contacts_received || 0
-                                    )} orcamentos
+                                    )} orcamentos · IA {formatScore(vendor.avg_score || 0)}
                                   </div>
                                 </button>
                               ))
@@ -1339,6 +1344,13 @@ function AppContent({ onLogout }) {
                                       )}
                                     </p>
                                     <p className="stat-foot">Tempo de espera</p>
+                                  </article>
+                                  <article className="metric-card">
+                                    <p className="stat-label">Score IA</p>
+                                    <p className="stat-value">
+                                      {formatScore(selectedVendorData.avg_score || 0)}
+                                    </p>
+                                    <p className="stat-foot">Media 0-10</p>
                                   </article>
                                   <article className="metric-card">
                                     <p className="stat-label">Somatoria orcada</p>

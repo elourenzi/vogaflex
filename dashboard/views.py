@@ -617,7 +617,13 @@ def dashboard_api(request):
                   COALESCE(SUM(CASE WHEN f.budget_value > 0 THEN f.budget_value ELSE 0 END), 0) AS budgets_sum,
                   COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS dead_contacts,
                   AVG(bd.business_seconds) AS avg_duration_seconds,
-                  AVG(bh.business_seconds) AS avg_handoff_seconds
+                  AVG(bh.business_seconds) AS avg_handoff_seconds,
+                  AVG(
+                    NULLIF(
+                      REGEXP_REPLACE(COALESCE(f.ai_agent_rating::text, ''), '[^0-9\\.]', '', 'g'),
+                      ''
+                    )::numeric
+                  ) AS avg_score
                 FROM filtered f
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
                 LEFT JOIN business_duration bd ON bd.chat_id = f.chat_id
@@ -685,6 +691,7 @@ def dashboard_api(request):
                     "dead_contacts": row[4],
                     "avg_duration_seconds": float(row[5]) if row[5] is not None else 0,
                     "avg_handoff_seconds": float(row[6]) if row[6] is not None else 0,
+                    "avg_score": float(row[7]) if row[7] is not None else 0,
                 }
                 for row in vendor_rows
             ]
