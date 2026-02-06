@@ -116,14 +116,14 @@ const formatScore = (value) => {
 const messagePlaceholder = (messageType) => {
   const type = normalizeText(messageType);
   if (type === "image") return "[Imagem]";
-  if (type === "audio") return "[Audio]";
-  if (type === "video") return "[Video]";
+  if (type === "audio") return "[Áudio]";
+  if (type === "video") return "[Vídeo]";
   if (type === "file") return "[Arquivo]";
   if (type === "document") return "[Documento]";
   if (type === "template") return "[Template]";
   if (type === "call") return "[Chamada]";
   if (type === "vcard") return "[Contato]";
-  if (type === "location") return "[Localizacao]";
+  if (type === "location") return "[Localização]";
   return "[Mensagem]";
 };
 
@@ -231,7 +231,7 @@ function LoginScreen({ onLogin }) {
               e decore
             </span>
           </div>
-          <h1>Gestao inteligente do relacionamento com seus clientes.</h1>
+          <h1>Gestão inteligente do relacionamento com seus clientes.</h1>
           <p className="login-subhead">
             Centralize conversas, acompanhe o funil em tempo real e responda com agilidade
             mantendo o tom premium da Vogaflex.
@@ -239,13 +239,13 @@ function LoginScreen({ onLogin }) {
           <div className="login-highlights">
             <article className="highlight-card">
               <p className="highlight-label">Atendimento premium</p>
-              <p className="highlight-value">SLA mais rapido</p>
+              <p className="highlight-value">SLA mais rápido</p>
               <p className="highlight-note">Monitoramento de fila e transferencias.</p>
             </article>
             <article className="highlight-card">
-              <p className="highlight-label">Visao do funil</p>
+              <p className="highlight-label">Visão do funil</p>
               <p className="highlight-value">Etapas claras</p>
-              <p className="highlight-note">Status e historico em um unico lugar.</p>
+              <p className="highlight-note">Status e histórico em um único lugar.</p>
             </article>
             <article className="highlight-card">
               <p className="highlight-label">Equipe conectada</p>
@@ -259,7 +259,7 @@ function LoginScreen({ onLogin }) {
           <p className="eyebrow">Acesso seguro</p>
           <h2>Entrar na plataforma</h2>
           <p className="muted">
-            Use seu e-mail corporativo para continuar e acesse os paines do time.
+            Use seu e-mail corporativo para continuar e acesse os painéis do time.
           </p>
           <form className="login-form" onSubmit={handleSubmit}>
             <label className="field">
@@ -763,7 +763,7 @@ function AppContent({ onLogout }) {
               {loading ? "Carregando..." : `${filteredConversations.length} encontradas`}
             </p>
           </div>
-          <span className="pill">{monthFilter ? "Mes corrente" : "Periodo"}</span>
+          <span className="pill">{monthFilter ? "Mês corrente" : "Período"}</span>
         </div>
 
         {error ? (
@@ -785,7 +785,7 @@ function AppContent({ onLogout }) {
         <details className="filter-menu">
           <summary>Filtros</summary>
           <label className="field toggle">
-            <span>Mes corrente</span>
+            <span>Mês corrente</span>
             <input
               type="checkbox"
               checked={monthFilter}
@@ -802,7 +802,7 @@ function AppContent({ onLogout }) {
               />
             </label>
             <label className="field">
-              <span>Ate</span>
+              <span>Até</span>
               <input
                 type="date"
                 value={dateTo}
@@ -897,7 +897,7 @@ function AppContent({ onLogout }) {
         <section className="panel chat-panel">
           <div className="chat-header">
             <div>
-              <p className="eyebrow">Historico</p>
+              <p className="eyebrow">Histórico</p>
               <h2>{selected?.cliente_nome || "Selecione uma conversa"}</h2>
               <p className="vendor-tag">
                 {selected
@@ -913,7 +913,7 @@ function AppContent({ onLogout }) {
         <div className="chat-window" role="log">
           {!selected ? (
             <p className="empty">
-              Selecione uma conversa para ver o historico completo.
+              Selecione uma conversa para ver o histórico completo.
             </p>
           ) : messagesLoading ? (
             <p className="empty">Carregando mensagens...</p>
@@ -983,18 +983,18 @@ function AppContent({ onLogout }) {
         ) : (
           <div className="detail-grid">
             <details className="detail-menu">
-              <summary>Informacoes principais</summary>
+              <summary>Informações principais</summary>
               <dl className="detail-list">
                 <div>
                   <dt>Status</dt>
                   <dd>{selected.status_conversa || "--"}</dd>
                 </div>
                 <div>
-                  <dt>Valor do orcamento</dt>
+                  <dt>Valor do orçamento</dt>
                   <dd>{formatCurrency(selected.valor_orcamento)}</dd>
                 </div>
                 <div>
-                  <dt>Data de criacao</dt>
+                  <dt>Data de criação</dt>
                   <dd>{formatDate(selected.data_criacao_chat)}</dd>
                 </div>
                 <div>
@@ -1002,7 +1002,7 @@ function AppContent({ onLogout }) {
                   <dd>{formatDate(selected.data_fechamento)}</dd>
                 </div>
                 <div>
-                  <dt>Media IA (vendedor)</dt>
+                  <dt>Média IA (vendedor)</dt>
                   <dd>{formatScore(selectedVendorAvgScore)}</dd>
                 </div>
                 <div>
@@ -1060,7 +1060,7 @@ function AppContent({ onLogout }) {
                   <dd>{selected.ai_summary || "--"}</dd>
                 </div>
                 <div>
-                  <dt>Sugestao IA</dt>
+                  <dt>Sugestão IA</dt>
                   <dd>{selected.ai_suggestion || "--"}</dd>
                 </div>
                 <div>
@@ -1116,7 +1116,7 @@ function AppContent({ onLogout }) {
                     className={`range-btn${dashboardRange === "month" ? " is-active" : ""}`}
                     onClick={() => applyDashboardPreset("month")}
                   >
-                    Mes
+                    Mês
                   </button>
                   <button
                     type="button"
@@ -1138,7 +1138,7 @@ function AppContent({ onLogout }) {
                   />
                 </label>
                 <label className="field">
-                  <span>Ate</span>
+                  <span>Até</span>
                   <input
                     type="date"
                     value={dashboardDateTo}
@@ -1153,7 +1153,7 @@ function AppContent({ onLogout }) {
                   className="primary-button"
                   onClick={() => setDashboardFetchVersion((v) => v + 1)}
                 >
-                  Aplicar periodo
+                  Aplicar período
                 </button>
               </div>
               {dashboardLoading ? (
@@ -1179,8 +1179,8 @@ function AppContent({ onLogout }) {
                       </div>
                       <div className="dashboard-section">
                         <div className="section-head">
-                          <h3>Historico diario</h3>
-                          <p className="muted">Ultimos 14 dias do periodo.</p>
+                          <h3>Histórico diário</h3>
+                          <p className="muted">Últimos 14 dias do período.</p>
                         </div>
                         <div className="metric-grid">
                           <article className="metric-card">
@@ -1241,33 +1241,33 @@ function AppContent({ onLogout }) {
                           <article className="metric-card">
                             <p className="stat-label">Contatos recebidos</p>
                             <p className="stat-value">{formatCount(vendorTotals.contacts)}</p>
-                            <p className="stat-foot">Base do periodo</p>
+                            <p className="stat-foot">Base do período</p>
                           </article>
                           <article className="metric-card">
-                            <p className="stat-label">Orcamentos detectados</p>
+                            <p className="stat-label">Orçamentos detectados</p>
                             <p className="stat-value">{formatCount(vendorTotals.budgetsCount)}</p>
                             <p className="stat-foot">
-                              {formatPercent(vendorTotals.budgetsCount, vendorTotals.contacts)} de conversao
+                              {formatPercent(vendorTotals.budgetsCount, vendorTotals.contacts)} de conversão
                             </p>
                           </article>
                           <article className="metric-card">
-                            <p className="stat-label">Somatoria orcada (registrado)</p>
+                            <p className="stat-label">Somatória orçada (registrado)</p>
                             <p className="stat-value">{formatCurrency(vendorTotals.budgetsSum)}</p>
                             <p className="stat-foot">Volume financeiro</p>
                           </article>
                           <article className="metric-card">
-                            <p className="stat-label">Somatoria orcada (mensagens)</p>
+                            <p className="stat-label">Somatória orçada (mensagens)</p>
                             <p className="stat-value">
                               {formatCurrency(vendorTotals.budgetsSumDetected)}
                             </p>
-                            <p className="stat-foot">Nao registrado no CRM</p>
+                            <p className="stat-foot">Não registrado no CRM</p>
                           </article>
                           <article className="metric-card">
                             <p className="stat-label">TMA</p>
                             <p className="stat-value">
                               {formatDuration(dashboardStats?.avg_duration_seconds || 0)}
                             </p>
-                            <p className="stat-foot">Tempo medio atendimento</p>
+                            <p className="stat-foot">Tempo médio de atendimento</p>
                           </article>
                           <article className="metric-card">
                             <p className="stat-label">TME</p>
@@ -1291,7 +1291,7 @@ function AppContent({ onLogout }) {
                         <div className="vendor-layout">
                           <div className="vendor-list">
                             {vendorList.length === 0 ? (
-                              <p className="empty">Sem vendedores no periodo.</p>
+                              <p className="empty">Sem vendedores no período.</p>
                             ) : (
                               vendorList.map((vendor) => (
                                 <button
@@ -1308,7 +1308,7 @@ function AppContent({ onLogout }) {
                                     {formatPercent(
                                       vendor.budgets_detected_count || vendor.budgets_count || 0,
                                       vendor.contacts_received || 0
-                                    )} orcamentos · IA {formatScore(vendor.avg_score || 0)}
+                                    )} orçamentos · IA {formatScore(vendor.avg_score || 0)}
                                   </div>
                                 </button>
                               ))
@@ -1333,7 +1333,7 @@ function AppContent({ onLogout }) {
                                       note: "Base do vendedor",
                                     },
                                     {
-                                      label: "Orcamentos detectados",
+                                      label: "Orçamentos detectados",
                                       value:
                                         selectedVendorData.budgets_detected_count ||
                                         selectedVendorData.budgets_count ||
@@ -1343,7 +1343,7 @@ function AppContent({ onLogout }) {
                                           selectedVendorData.budgets_count ||
                                           0,
                                         selectedVendorData.contacts_received || 0
-                                      )} de conversao`,
+                                      )} de conversão`,
                                     },
                                     {
                                       label: "Morreu",
@@ -1371,7 +1371,7 @@ function AppContent({ onLogout }) {
                                         selectedVendorData.avg_duration_seconds || 0
                                       )}
                                     </p>
-                                    <p className="stat-foot">Tempo medio</p>
+                                    <p className="stat-foot">Tempo médio</p>
                                   </article>
                                   <article className="metric-card">
                                     <p className="stat-label">TME</p>
@@ -1387,29 +1387,29 @@ function AppContent({ onLogout }) {
                                     <p className="stat-value">
                                       {formatScore(selectedVendorData.avg_score || 0)}
                                     </p>
-                                    <p className="stat-foot">Media 0-10</p>
+                                    <p className="stat-foot">Média 0–10</p>
                                   </article>
                                   <article className="metric-card">
-                                    <p className="stat-label">Somatoria orcada (registrado)</p>
+                                    <p className="stat-label">Somatória orçada (registrado)</p>
                                     <p className="stat-value">
                                       {formatCurrency(selectedVendorData.budgets_sum || 0)}
                                     </p>
                                     <p className="stat-foot">Valor total</p>
                                   </article>
                                   <article className="metric-card">
-                                    <p className="stat-label">Somatoria orcada (mensagens)</p>
+                                    <p className="stat-label">Somatória orçada (mensagens)</p>
                                     <p className="stat-value">
                                       {formatCurrency(
                                         selectedVendorData.budgets_sum_detected || 0
                                       )}
                                     </p>
-                                    <p className="stat-foot">Nao registrado no CRM</p>
+                                    <p className="stat-foot">Não registrado no CRM</p>
                                   </article>
                                 </div>
                                 <div className="score-panel">
                                   <h4>Score do bot</h4>
                                   {selectedVendorScores.length === 0 ? (
-                                    <p className="empty">Sem scores no periodo.</p>
+                                    <p className="empty">Sem scores no período.</p>
                                   ) : (
                                     <div className="score-grid">
                                       {selectedVendorScores.map((score) => (
@@ -1430,7 +1430,7 @@ function AppContent({ onLogout }) {
                   )}
                 </>
               ) : (
-                <div className="empty">Sem dados para o periodo.</div>
+                <div className="empty">Sem dados para o período.</div>
               )}
             </div>
           </div>

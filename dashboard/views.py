@@ -494,9 +494,17 @@ def dashboard_api(request):
                 ORDER BY day;
             """
 
+            support_reason_pattern = "(pos[- ]?venda|duvidas?|sac|rastreio)"
+
             vendor_summary_query = f"""
                 WITH filtered AS (
-                  SELECT *
+                  SELECT
+                    c.*,
+                    translate(
+                      lower(COALESCE(c.contact_reason, '')),
+                      'áàâãäéèêëíìîïóòôõöúùûüç',
+                      'aaaaaeeeeiiiiooooouuuuc'
+                    ) AS reason_norm
                   FROM conversations c
                   {where_sql}
                 ),
@@ -632,15 +640,30 @@ def dashboard_api(request):
                 SELECT
                   f.attendant_name AS vendedor,
                   COUNT(*) AS contacts_received,
-                  COUNT(*) FILTER (WHERE f.budget_value > 0) AS budgets_count,
                   COUNT(*) FILTER (
-                    WHERE f.budget_value > 0 OR bv.max_budget_msg IS NOT NULL
+                    WHERE f.budget_value > 0
+                      AND NOT (f.reason_norm ~ '{support_reason_pattern}')
+                  ) AS budgets_count,
+                  COUNT(*) FILTER (
+                    WHERE (f.budget_value > 0 OR bv.max_budget_msg IS NOT NULL)
+                      AND NOT (f.reason_norm ~ '{support_reason_pattern}')
                   ) AS budgets_detected_count,
-                  COALESCE(SUM(CASE WHEN f.budget_value > 0 THEN f.budget_value ELSE 0 END), 0) AS budgets_sum,
+                  COALESCE(
+                    SUM(
+                      CASE
+                        WHEN f.budget_value > 0
+                          AND NOT (f.reason_norm ~ '{support_reason_pattern}')
+                        THEN f.budget_value
+                        ELSE 0
+                      END
+                    ),
+                    0
+                  ) AS budgets_sum,
                   COALESCE(
                     SUM(
                       CASE
                         WHEN f.budget_value > 0 THEN 0
+                        WHEN f.reason_norm ~ '{support_reason_pattern}' THEN 0
                         ELSE COALESCE(bv.max_budget_msg, 0)
                       END
                     ),
