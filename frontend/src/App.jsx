@@ -100,6 +100,14 @@ const formatDuration = (seconds) => {
   return `${minutes}m`;
 };
 
+const parseScore = (value) => {
+  if (value === null || value === undefined) return null;
+  const match = String(value).match(/\d+(?:[.,]\d+)?/);
+  if (!match) return null;
+  const numeric = Number(match[0].replace(",", "."));
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
 const formatScore = (value) => {
   if (!Number.isFinite(value) || value <= 0) return "--";
   return value.toFixed(1);
@@ -491,6 +499,20 @@ function AppContent({ onLogout }) {
   const selected = filteredConversations.find(
     (item) => item.chat_id === selectedId
   );
+
+  const selectedVendorAvgScore = useMemo(() => {
+    if (!selected?.vendedor_nome) return null;
+    const relevant = filteredConversations.filter(
+      (item) => item.vendedor_nome === selected.vendedor_nome
+    );
+    if (relevant.length === 0) return null;
+    const scores = relevant
+      .map((item) => parseScore(item.ai_agent_rating))
+      .filter((value) => value !== null);
+    if (scores.length === 0) return null;
+    const total = scores.reduce((acc, value) => acc + value, 0);
+    return total / scores.length;
+  }, [filteredConversations, selected]);
 
   const [messages, setMessages] = useState([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -980,8 +1002,8 @@ function AppContent({ onLogout }) {
                   <dd>{formatDate(selected.data_fechamento)}</dd>
                 </div>
                 <div>
-                  <dt>Nota IA</dt>
-                  <dd>{selected.ai_agent_rating ?? "--"}</dd>
+                  <dt>Media IA (vendedor)</dt>
+                  <dd>{formatScore(selectedVendorAvgScore)}</dd>
                 </div>
                 <div>
                   <dt>Sentimento IA</dt>
