@@ -100,6 +100,13 @@ const formatDuration = (seconds) => {
   return `${minutes}m`;
 };
 
+const formatDateInput = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const parseScore = (value) => {
   if (value === null || value === undefined) return null;
   const match = String(value).match(/\d+(?:[.,]\d+)?/);
@@ -556,9 +563,8 @@ function AppContent({ onLogout }) {
       const now = new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      const fmt = (d) => d.toISOString().slice(0, 10);
-      params.set("date_from", fmt(monthStart));
-      params.set("date_to", fmt(monthEnd));
+      params.set("date_from", formatDateInput(monthStart));
+      params.set("date_to", formatDateInput(monthEnd));
     }
     return params.toString();
   };
@@ -578,10 +584,9 @@ function AppContent({ onLogout }) {
     } else {
       start = new Date(now.getFullYear(), now.getMonth(), 1);
     }
-    const fmt = (date) => date.toISOString().slice(0, 10);
     setDashboardRange(preset);
-    setDashboardDateFrom(fmt(start));
-    setDashboardDateTo(fmt(now));
+    setDashboardDateFrom(formatDateInput(start));
+    setDashboardDateTo(formatDateInput(now));
     setDashboardFetchVersion((value) => value + 1);
   };
 
