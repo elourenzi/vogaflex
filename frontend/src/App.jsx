@@ -568,6 +568,10 @@ function AppContent({ onLogout }) {
     let start = new Date(now);
     if (preset === "week") {
       start.setDate(now.getDate() - 6);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      if (start < monthStart) {
+        start = monthStart;
+      }
     } else if (preset === "quarter") {
       const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
       start = new Date(now.getFullYear(), quarterStartMonth, 1);
