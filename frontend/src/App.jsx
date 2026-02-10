@@ -364,7 +364,9 @@ function AppContent({ onLogout }) {
   const [dashboardRange, setDashboardRange] = useState("month");
   const [dashboardVendor, setDashboardVendor] = useState("");
   const [dashboardFetchVersion, setDashboardFetchVersion] = useState(0);
-  const [contactsBreakdownOpen, setContactsBreakdownOpen] = useState(false);
+  const [vendorBreakdownOpen, setVendorBreakdownOpen] = useState(false);
+  const [vendorBreakdown, setVendorBreakdown] = useState(null);
+  const [vendorBreakdownLoading, setVendorBreakdownLoading] = useState(false);
 
   const loadConversations = async () => {
     const params = new URLSearchParams();
@@ -556,7 +558,7 @@ function AppContent({ onLogout }) {
     };
   }, [selectedId]);
 
-  const buildDashboardParams = () => {
+  const buildDashboardParams = (extra = {}) => {
     const params = new URLSearchParams();
     if (dashboardDateFrom) params.set("date_from", dashboardDateFrom);
     if (dashboardDateTo) params.set("date_to", dashboardDateTo);
@@ -567,6 +569,7 @@ function AppContent({ onLogout }) {
       params.set("date_from", formatDateInput(monthStart));
       params.set("date_to", formatDateInput(monthEnd));
     }
+    if (extra.vendedor) params.set("vendedor", extra.vendedor);
     return params.toString();
   };
 
@@ -619,6 +622,35 @@ function AppContent({ onLogout }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView, dashboardFetchVersion]);
+
+  useEffect(() => {
+    let active = true;
+    if (activeView !== "dashboard" || dashboardTab !== "vendors") {
+      return () => {};
+    }
+    if (!dashboardVendor) return () => {};
+    setVendorBreakdownLoading(true);
+    fetch(`/api/dashboard/?${buildDashboardParams({ vendedor: dashboardVendor })}`)
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!active) return;
+        if (!ok) throw new Error(data.error || "Erro ao carregar estratificação");
+        setVendorBreakdown(data.contacts_breakdown || null);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err.message || "Erro desconhecido");
+        setVendorBreakdown(null);
+      })
+      .finally(() => {
+        if (!active) return;
+        setVendorBreakdownLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, dashboardTab, dashboardVendor, dashboardFetchVersion]);
 
   const dashboardStats = dashboardData?.stats;
   const sdrData = dashboardData?.sdr;
@@ -705,19 +737,18 @@ function AppContent({ onLogout }) {
   );
   const selectedVendorScores = vendorScores?.[dashboardVendor] || [];
 
-  const contactsBreakdown = dashboardData?.contacts_breakdown;
-  const contactsBreakdownStages = contactsBreakdown?.stages || [];
+  const contactsBreakdownStages = vendorBreakdown?.stages || [];
   const contactsBreakdownTotal =
-    Number.isFinite(contactsBreakdown?.total) && contactsBreakdown?.total >= 0
-      ? contactsBreakdown.total
-      : vendorTotals.contacts;
+    Number.isFinite(vendorBreakdown?.total) && vendorBreakdown?.total >= 0
+      ? vendorBreakdown.total
+      : selectedVendorData?.contacts_received || 0;
   const contactsBreakdownFinalized =
-    Number.isFinite(contactsBreakdown?.finalized) && contactsBreakdown?.finalized >= 0
-      ? contactsBreakdown.finalized
+    Number.isFinite(vendorBreakdown?.finalized) && vendorBreakdown?.finalized >= 0
+      ? vendorBreakdown.finalized
       : 0;
   const contactsBreakdownActive =
-    Number.isFinite(contactsBreakdown?.active) && contactsBreakdown?.active >= 0
-      ? contactsBreakdown.active
+    Number.isFinite(vendorBreakdown?.active) && vendorBreakdown?.active >= 0
+      ? vendorBreakdown.active
       : Math.max(contactsBreakdownTotal - contactsBreakdownFinalized, 0);
   const contactsStageList = contactsBreakdownStages
     .filter((stage) => stage && stage.stage_name)
@@ -1270,20 +1301,11 @@ function AppContent({ onLogout }) {
                           <p className="muted">Resumo consolidado da equipe.</p>
                         </div>
                         <div className="metric-grid">
-                          <button
-                            type="button"
-                            className={`metric-card is-clickable${
-                              contactsBreakdownOpen ? " is-active" : ""
-                            }`}
-                            onClick={() => setContactsBreakdownOpen((open) => !open)}
-                            aria-expanded={contactsBreakdownOpen}
-                          >
+                          <article className="metric-card">
                             <p className="stat-label">Contatos recebidos</p>
                             <p className="stat-value">{formatCount(vendorTotals.contacts)}</p>
-                            <p className="stat-foot">
-                              Base do período. Clique para detalhar.
-                            </p>
-                          </button>
+                            <p className="stat-foot">Base do período</p>
+                          </article>
                           <article className="metric-card">
                             <p className="stat-label">Orçamentos detectados</p>
                             <p className="stat-value">{formatCount(vendorTotals.budgetsCount)}</p>
@@ -1323,62 +1345,6 @@ function AppContent({ onLogout }) {
                             <p className="stat-foot">Sem resposta</p>
                           </article>
                         </div>
-                        {contactsBreakdownOpen && (
-                          <div className="metric-card breakdown-card">
-                            <div className="breakdown-header">
-                              <div>
-                                <p className="stat-label">Estratificação de contatos</p>
-                                <p className="stat-foot">
-                                  Base: {formatCount(contactsBreakdownTotal)} no período
-                                </p>
-                              </div>
-                              <span className="tag">Contatos</span>
-                            </div>
-                            <div className="breakdown-grid">
-                              <div className="stat-card">
-                                <p className="stat-label">Ativos</p>
-                                <p className="stat-value">
-                                  {formatCount(contactsBreakdownActive)}
-                                </p>
-                                <p className="stat-foot">
-                                  {formatPercent(
-                                    contactsBreakdownActive,
-                                    contactsBreakdownTotal
-                                  )}{" "}
-                                  do total
-                                </p>
-                              </div>
-                              <div className="stat-card">
-                                <p className="stat-label">Finalizados</p>
-                                <p className="stat-value">
-                                  {formatCount(contactsBreakdownFinalized)}
-                                </p>
-                                <p className="stat-foot">
-                                  {formatPercent(
-                                    contactsBreakdownFinalized,
-                                    contactsBreakdownTotal
-                                  )}{" "}
-                                  do total
-                                </p>
-                              </div>
-                            </div>
-                            {contactsStageList.length > 0 ? (
-                              <div className="breakdown-stage-grid">
-                                {contactsStageList.map((stage, index) => (
-                                  <div
-                                    className="breakdown-chip"
-                                    key={`${stage.stage_name}-${index}`}
-                                  >
-                                    <span>{stage.stage_name}</span>
-                                    <strong>{formatCount(stage.total)}</strong>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="empty">Sem estratificação disponível.</p>
-                            )}
-                          </div>
-                        )}
                       </div>
                       <div className="dashboard-section">
                         <div className="section-head">
@@ -1428,6 +1394,7 @@ function AppContent({ onLogout }) {
                                       label: "Contatos",
                                       value: selectedVendorData.contacts_received || 0,
                                       note: "Base do vendedor",
+                                      clickable: true,
                                     },
                                     {
                                       label: "Orçamentos detectados",
@@ -1450,16 +1417,107 @@ function AppContent({ onLogout }) {
                                         selectedVendorData.contacts_received || 0
                                       )} do total`,
                                     },
-                                  ].map((item) => (
-                                    <article className="funnel-step" key={item.label}>
-                                      <p className="stat-label">{item.label}</p>
-                                      <p className="stat-value">
-                                        {formatCount(item.value)}
-                                      </p>
-                                      <p className="stat-foot">{item.note}</p>
-                                    </article>
-                                  ))}
+                                  ].map((item) =>
+                                    item.clickable ? (
+                                      <button
+                                        key={item.label}
+                                        type="button"
+                                        className={`funnel-step is-clickable${
+                                          vendorBreakdownOpen ? " is-active" : ""
+                                        }`}
+                                        onClick={() =>
+                                          setVendorBreakdownOpen((open) => !open)
+                                        }
+                                        aria-expanded={vendorBreakdownOpen}
+                                      >
+                                        <p className="stat-label">{item.label}</p>
+                                        <p className="stat-value">
+                                          {formatCount(item.value)}
+                                        </p>
+                                        <p className="stat-foot">{item.note}</p>
+                                      </button>
+                                    ) : (
+                                      <article className="funnel-step" key={item.label}>
+                                        <p className="stat-label">{item.label}</p>
+                                        <p className="stat-value">
+                                          {formatCount(item.value)}
+                                        </p>
+                                        <p className="stat-foot">{item.note}</p>
+                                      </article>
+                                    )
+                                  )}
                                 </div>
+                                {vendorBreakdownOpen && (
+                                  <div className="metric-card breakdown-card">
+                                    <div className="breakdown-header">
+                                      <div>
+                                        <p className="stat-label">
+                                          Estratificação de contatos
+                                        </p>
+                                        <p className="stat-foot">
+                                          Base: {formatCount(contactsBreakdownTotal)}{" "}
+                                          no período
+                                        </p>
+                                      </div>
+                                      <span className="tag">
+                                        {selectedVendorData.vendedor}
+                                      </span>
+                                    </div>
+                                    {vendorBreakdownLoading ? (
+                                      <p className="empty">
+                                        Carregando estratificação...
+                                      </p>
+                                    ) : (
+                                      <>
+                                        <div className="breakdown-grid">
+                                          <div className="stat-card">
+                                            <p className="stat-label">Ativos</p>
+                                            <p className="stat-value">
+                                              {formatCount(contactsBreakdownActive)}
+                                            </p>
+                                            <p className="stat-foot">
+                                              {formatPercent(
+                                                contactsBreakdownActive,
+                                                contactsBreakdownTotal
+                                              )}{" "}
+                                              do total
+                                            </p>
+                                          </div>
+                                          <div className="stat-card">
+                                            <p className="stat-label">Finalizados</p>
+                                            <p className="stat-value">
+                                              {formatCount(contactsBreakdownFinalized)}
+                                            </p>
+                                            <p className="stat-foot">
+                                              {formatPercent(
+                                                contactsBreakdownFinalized,
+                                                contactsBreakdownTotal
+                                              )}{" "}
+                                              do total
+                                            </p>
+                                          </div>
+                                        </div>
+                                        {contactsStageList.length > 0 ? (
+                                          <div className="breakdown-stage-grid">
+                                            {contactsStageList.map((stage, index) => (
+                                              <div
+                                                className="breakdown-chip"
+                                                key={`${stage.stage_name}-${index}`}
+                                              >
+                                                <span>{stage.stage_name}</span>
+                                                <strong>{formatCount(stage.total)}</strong>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <p className="empty">
+                                            Sem estratificação disponível.
+                                          </p>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                )}
                                 <div className="vendor-metrics">
                                   <article className="metric-card">
                                     <p className="stat-label">TMA</p>

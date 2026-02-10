@@ -246,6 +246,30 @@ button.metric-card {
   text-align: left;
 }
 
+.funnel-step.is-clickable {
+  cursor: pointer;
+  text-align: left;
+  transition: border 0.2s ease, background 0.2s ease;
+}
+
+.funnel-step.is-clickable:hover {
+  border-color: rgba(200, 38, 80, 0.4);
+}
+
+.funnel-step.is-active {
+  border-color: rgba(200, 38, 80, 0.4);
+  background: rgba(200, 38, 80, 0.08);
+}
+
+button.funnel-step {
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  font-family: inherit;
+}
+
 .breakdown-card {
   background: #ffffff;
   border-style: dashed;
