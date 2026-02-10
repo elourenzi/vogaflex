@@ -376,6 +376,31 @@ def dashboard_api(request):
         ORDER BY total DESC;
     """
 
+    contacts_breakdown_query = f"""
+        WITH filtered AS (
+          SELECT *
+          FROM conversations c
+          {where_sql}
+        ),
+        normalized AS (
+          SELECT
+            CASE
+              WHEN current_funnel_stage = 'screening' THEN 'Triagem'
+              WHEN current_funnel_stage IN ('waiting', 'Em espera') THEN 'Aguardando'
+              WHEN current_funnel_stage = 'Em atendimento' THEN 'Em atendimento'
+              WHEN current_funnel_stage IN ('Finalizado', 'finalizado', 'finished', 'closed') THEN 'Finalizado'
+              WHEN current_funnel_stage = 'active' THEN 'Ativo'
+              ELSE COALESCE(current_funnel_stage, 'Sem etapa')
+            END AS stage_name
+          FROM filtered
+          WHERE attendant_name IS NOT NULL
+        )
+        SELECT stage_name, COUNT(*) AS total
+        FROM normalized
+        GROUP BY stage_name
+        ORDER BY total DESC;
+    """
+
     try:
         with connection.cursor() as cursor:
             cursor.execute(stats_query, params)
@@ -389,6 +414,19 @@ def dashboard_api(request):
             stage_counts = [
                 {"stage_name": row[0], "total": row[1]} for row in stage_rows
             ]
+
+            cursor.execute(contacts_breakdown_query, params)
+            contacts_rows = cursor.fetchall()
+            contacts_stages = [
+                {"stage_name": row[0], "total": row[1]} for row in contacts_rows
+            ]
+            contacts_total = sum(row[1] for row in contacts_rows) if contacts_rows else 0
+            contacts_finalized = 0
+            for stage in contacts_stages:
+                if str(stage["stage_name"]).strip().lower() == "finalizado":
+                    contacts_finalized = stage["total"]
+                    break
+            contacts_active = max(contacts_total - contacts_finalized, 0)
             sdr_summary_query = f"""
                 WITH filtered AS (
                   SELECT *
@@ -765,6 +803,12 @@ def dashboard_api(request):
             {
                 "stats": stats,
                 "stage_counts": stage_counts,
+                "contacts_breakdown": {
+                    "total": contacts_total,
+                    "active": contacts_active,
+                    "finalized": contacts_finalized,
+                    "stages": contacts_stages,
+                },
                 "sdr": {
                     "summary": sdr_summary,
                     "daily": sdr_daily,

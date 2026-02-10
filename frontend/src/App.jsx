@@ -364,6 +364,7 @@ function AppContent({ onLogout }) {
   const [dashboardRange, setDashboardRange] = useState("month");
   const [dashboardVendor, setDashboardVendor] = useState("");
   const [dashboardFetchVersion, setDashboardFetchVersion] = useState(0);
+  const [contactsBreakdownOpen, setContactsBreakdownOpen] = useState(false);
 
   const loadConversations = async () => {
     const params = new URLSearchParams();
@@ -703,6 +704,28 @@ function AppContent({ onLogout }) {
     (item) => item.vendedor === dashboardVendor
   );
   const selectedVendorScores = vendorScores?.[dashboardVendor] || [];
+
+  const contactsBreakdown = dashboardData?.contacts_breakdown;
+  const contactsBreakdownStages = contactsBreakdown?.stages || [];
+  const contactsBreakdownTotal =
+    Number.isFinite(contactsBreakdown?.total) && contactsBreakdown?.total >= 0
+      ? contactsBreakdown.total
+      : vendorTotals.contacts;
+  const contactsBreakdownFinalized =
+    Number.isFinite(contactsBreakdown?.finalized) && contactsBreakdown?.finalized >= 0
+      ? contactsBreakdown.finalized
+      : 0;
+  const contactsBreakdownActive =
+    Number.isFinite(contactsBreakdown?.active) && contactsBreakdown?.active >= 0
+      ? contactsBreakdown.active
+      : Math.max(contactsBreakdownTotal - contactsBreakdownFinalized, 0);
+  const contactsStageList = contactsBreakdownStages
+    .filter((stage) => stage && stage.stage_name)
+    .map((stage) => ({
+      stage_name: String(stage.stage_name),
+      total: Number(stage.total) || 0,
+    }))
+    .sort((a, b) => b.total - a.total);
 
   return (
     <div className="app-shell">
@@ -1247,11 +1270,20 @@ function AppContent({ onLogout }) {
                           <p className="muted">Resumo consolidado da equipe.</p>
                         </div>
                         <div className="metric-grid">
-                          <article className="metric-card">
+                          <button
+                            type="button"
+                            className={`metric-card is-clickable${
+                              contactsBreakdownOpen ? " is-active" : ""
+                            }`}
+                            onClick={() => setContactsBreakdownOpen((open) => !open)}
+                            aria-expanded={contactsBreakdownOpen}
+                          >
                             <p className="stat-label">Contatos recebidos</p>
                             <p className="stat-value">{formatCount(vendorTotals.contacts)}</p>
-                            <p className="stat-foot">Base do período</p>
-                          </article>
+                            <p className="stat-foot">
+                              Base do período. Clique para detalhar.
+                            </p>
+                          </button>
                           <article className="metric-card">
                             <p className="stat-label">Orçamentos detectados</p>
                             <p className="stat-value">{formatCount(vendorTotals.budgetsCount)}</p>
@@ -1291,6 +1323,62 @@ function AppContent({ onLogout }) {
                             <p className="stat-foot">Sem resposta</p>
                           </article>
                         </div>
+                        {contactsBreakdownOpen && (
+                          <div className="metric-card breakdown-card">
+                            <div className="breakdown-header">
+                              <div>
+                                <p className="stat-label">Estratificação de contatos</p>
+                                <p className="stat-foot">
+                                  Base: {formatCount(contactsBreakdownTotal)} no período
+                                </p>
+                              </div>
+                              <span className="tag">Contatos</span>
+                            </div>
+                            <div className="breakdown-grid">
+                              <div className="stat-card">
+                                <p className="stat-label">Ativos</p>
+                                <p className="stat-value">
+                                  {formatCount(contactsBreakdownActive)}
+                                </p>
+                                <p className="stat-foot">
+                                  {formatPercent(
+                                    contactsBreakdownActive,
+                                    contactsBreakdownTotal
+                                  )}{" "}
+                                  do total
+                                </p>
+                              </div>
+                              <div className="stat-card">
+                                <p className="stat-label">Finalizados</p>
+                                <p className="stat-value">
+                                  {formatCount(contactsBreakdownFinalized)}
+                                </p>
+                                <p className="stat-foot">
+                                  {formatPercent(
+                                    contactsBreakdownFinalized,
+                                    contactsBreakdownTotal
+                                  )}{" "}
+                                  do total
+                                </p>
+                              </div>
+                            </div>
+                            {contactsStageList.length > 0 ? (
+                              <div className="breakdown-stage-grid">
+                                {contactsStageList.map((stage, index) => (
+                                  <div
+                                    className="breakdown-chip"
+                                    key={`${stage.stage_name}-${index}`}
+                                  >
+                                    <span>{stage.stage_name}</span>
+                                    <strong>{formatCount(stage.total)}</strong>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="empty">Sem estratificação disponível.</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="dashboard-section">
                         <div className="section-head">

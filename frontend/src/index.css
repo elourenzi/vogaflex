@@ -226,6 +226,68 @@ input {
   gap: 8px;
 }
 
+.metric-card.is-clickable {
+  cursor: pointer;
+  text-align: left;
+  transition: border 0.2s ease, background 0.2s ease;
+}
+
+.metric-card.is-clickable:hover {
+  border-color: rgba(200, 38, 80, 0.4);
+}
+
+.metric-card.is-active {
+  border-color: rgba(200, 38, 80, 0.4);
+  background: rgba(200, 38, 80, 0.08);
+}
+
+button.metric-card {
+  width: 100%;
+  text-align: left;
+}
+
+.breakdown-card {
+  background: #ffffff;
+  border-style: dashed;
+}
+
+.breakdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.breakdown-stage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.breakdown-chip {
+  border: 1px solid rgba(47, 48, 61, 0.12);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f7f8fa;
+  font-weight: 600;
+}
+
+.breakdown-chip span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .funnel-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
