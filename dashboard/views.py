@@ -422,11 +422,19 @@ def dashboard_api(request):
             ]
             contacts_total = sum(row[1] for row in contacts_rows) if contacts_rows else 0
             contacts_finalized = 0
+            contacts_active = 0
+            contacts_pending = 0
             for stage in contacts_stages:
-                if str(stage["stage_name"]).strip().lower() == "finalizado":
-                    contacts_finalized = stage["total"]
-                    break
-            contacts_active = max(contacts_total - contacts_finalized, 0)
+                name = str(stage["stage_name"]).strip().lower()
+                if name == "finalizado":
+                    contacts_finalized += stage["total"]
+                elif name in ("em atendimento", "ativo"):
+                    contacts_active += stage["total"]
+                elif name in ("triagem", "aguardando"):
+                    contacts_pending += stage["total"]
+            contacts_other = max(
+                contacts_total - contacts_finalized - contacts_active - contacts_pending, 0
+            )
             sdr_summary_query = f"""
                 WITH filtered AS (
                   SELECT *
@@ -806,7 +814,9 @@ def dashboard_api(request):
                 "contacts_breakdown": {
                     "total": contacts_total,
                     "active": contacts_active,
+                    "pending": contacts_pending,
                     "finalized": contacts_finalized,
+                    "other": contacts_other,
                     "stages": contacts_stages,
                 },
                 "sdr": {

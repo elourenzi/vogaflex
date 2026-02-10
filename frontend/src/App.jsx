@@ -742,6 +742,10 @@ function AppContent({ onLogout }) {
     Number.isFinite(vendorBreakdown?.total) && vendorBreakdown?.total >= 0
       ? vendorBreakdown.total
       : selectedVendorData?.contacts_received || 0;
+  const contactsBreakdownPending =
+    Number.isFinite(vendorBreakdown?.pending) && vendorBreakdown?.pending >= 0
+      ? vendorBreakdown.pending
+      : 0;
   const contactsBreakdownFinalized =
     Number.isFinite(vendorBreakdown?.finalized) && vendorBreakdown?.finalized >= 0
       ? vendorBreakdown.finalized
@@ -749,7 +753,17 @@ function AppContent({ onLogout }) {
   const contactsBreakdownActive =
     Number.isFinite(vendorBreakdown?.active) && vendorBreakdown?.active >= 0
       ? vendorBreakdown.active
-      : Math.max(contactsBreakdownTotal - contactsBreakdownFinalized, 0);
+      : 0;
+  const contactsBreakdownOther =
+    Number.isFinite(vendorBreakdown?.other) && vendorBreakdown?.other >= 0
+      ? vendorBreakdown.other
+      : Math.max(
+          contactsBreakdownTotal -
+            contactsBreakdownFinalized -
+            contactsBreakdownActive -
+            contactsBreakdownPending,
+          0
+        );
   const contactsStageList = contactsBreakdownStages
     .filter((stage) => stage && stage.stage_name)
     .map((stage) => ({
@@ -1554,13 +1568,26 @@ function AppContent({ onLogout }) {
               <>
                 <div className="breakdown-grid">
                   <div className="stat-card">
-                    <p className="stat-label">Ativos</p>
+                    <p className="stat-label">Em atendimento</p>
                     <p className="stat-value">
                       {formatCount(contactsBreakdownActive)}
                     </p>
                     <p className="stat-foot">
                       {formatPercent(
                         contactsBreakdownActive,
+                        contactsBreakdownTotal
+                      )}{" "}
+                      do total
+                    </p>
+                  </div>
+                  <div className="stat-card">
+                    <p className="stat-label">Pendentes</p>
+                    <p className="stat-value">
+                      {formatCount(contactsBreakdownPending)}
+                    </p>
+                    <p className="stat-foot">
+                      {formatPercent(
+                        contactsBreakdownPending,
                         contactsBreakdownTotal
                       )}{" "}
                       do total
@@ -1579,6 +1606,21 @@ function AppContent({ onLogout }) {
                       do total
                     </p>
                   </div>
+                  {contactsBreakdownOther > 0 && (
+                    <div className="stat-card">
+                      <p className="stat-label">Outros</p>
+                      <p className="stat-value">
+                        {formatCount(contactsBreakdownOther)}
+                      </p>
+                      <p className="stat-foot">
+                        {formatPercent(
+                          contactsBreakdownOther,
+                          contactsBreakdownTotal
+                        )}{" "}
+                        do total
+                      </p>
+                    </div>
+                  )}
                 </div>
                 {contactsStageList.length > 0 ? (
                   <div className="breakdown-stage-grid">
