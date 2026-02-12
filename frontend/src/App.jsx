@@ -163,6 +163,17 @@ const botPhrases = [
   "obrigada, vou encaminhar ao nosso time de vendas",
 ];
 
+const STATUS_OPTIONS = [
+  "Todos",
+  "Triagem",
+  "Aguardando",
+  "Em atendimento",
+  "Finalizado",
+];
+
+const EMPTY_LIST = Object.freeze([]);
+const EMPTY_MAP = Object.freeze({});
+
 const isBotContent = (entry, content) => {
   const messageType = normalizeBotText(entry.msg_tipo);
   if (["template", "system", "bot", "automation", "automated"].includes(messageType)) {
@@ -440,8 +451,6 @@ function AppContent({ onLogout }) {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const fromDate = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
-    const toDate = dateTo ? new Date(`${dateTo}T23:59:59`) : null;
     return conversations.filter((item) => {
       // filtros ja aplicados no backend quando usa o botao "Aplicar"
       if (monthFilter) {
@@ -469,15 +478,7 @@ function AppContent({ onLogout }) {
         .join(" ");
       return haystack.includes(term);
     });
-  }, [conversations, debouncedSearch, monthFilter, dateFrom, dateTo]);
-
-  const statusOptions = [
-    "Todos",
-    "Triagem",
-    "Aguardando",
-    "Em atendimento",
-    "Finalizado",
-  ];
+  }, [conversations, debouncedSearch, monthFilter]);
 
   const vendedorOptions = useMemo(() => {
     const values = Array.from(
@@ -487,7 +488,7 @@ function AppContent({ onLogout }) {
   }, [conversations]);
 
   const etapaOptions = useMemo(() => {
-    const statusSet = new Set(statusOptions.map((s) => normalizeText(s)));
+    const statusSet = new Set(STATUS_OPTIONS.map((s) => normalizeText(s)));
     const values = Array.from(
       new Set(
         conversations
@@ -501,7 +502,14 @@ function AppContent({ onLogout }) {
   }, [conversations]);
 
   useEffect(() => {
-    if (!selectedId && filteredConversations.length > 0) {
+    if (filteredConversations.length === 0) {
+      if (selectedId !== null) setSelectedId(null);
+      return;
+    }
+    const selectedExists =
+      selectedId !== null &&
+      filteredConversations.some((item) => item.chat_id === selectedId);
+    if (!selectedExists) {
       setSelectedId(filteredConversations[0].chat_id);
     }
   }, [filteredConversations, selectedId]);
@@ -526,6 +534,22 @@ function AppContent({ onLogout }) {
 
   const [messages, setMessages] = useState([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
+
+  const dedupedMessages = useMemo(() => {
+    const seen = new Set();
+    return messages.filter((entry) => {
+      const signature = [
+        entry.chat_id || selectedId || "",
+        entry.evento_timestamp || "",
+        entry.msg_from_client === true ? "1" : "0",
+        normalizeText(entry.msg_tipo),
+        cleanMessageText(messageContent(entry)),
+      ].join("|");
+      if (seen.has(signature)) return false;
+      seen.add(signature);
+      return true;
+    });
+  }, [messages, selectedId]);
 
   useEffect(() => {
     let active = true;
@@ -655,8 +679,14 @@ function AppContent({ onLogout }) {
   const dashboardStats = dashboardData?.stats;
   const sdrData = dashboardData?.sdr;
   const vendorData = dashboardData?.vendors;
-  const vendorList = vendorData?.summary || [];
-  const vendorScores = vendorData?.scores || {};
+  const vendorList = useMemo(
+    () => vendorData?.summary || EMPTY_LIST,
+    [vendorData]
+  );
+  const vendorScores = useMemo(
+    () => vendorData?.scores || EMPTY_MAP,
+    [vendorData]
+  );
 
   useEffect(() => {
     if (vendorList.length === 0) return;
@@ -894,7 +924,7 @@ function AppContent({ onLogout }) {
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value)}
               >
-                {statusOptions.map((value) => (
+                {STATUS_OPTIONS.map((value) => (
                   <option key={value} value={value}>
                     {value}
                   </option>
@@ -995,7 +1025,7 @@ function AppContent({ onLogout }) {
           ) : messagesLoading ? (
             <p className="empty">Carregando mensagens...</p>
           ) : (
-            messages.map((entry, index) => {
+            dedupedMessages.map((entry, index) => {
               const content = cleanMessageText(messageContent(entry));
               const { name: vendorName, content: cleanedContent } =
                 splitVendorNameFromContent(content);
