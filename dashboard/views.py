@@ -55,7 +55,6 @@ ORDER BY COALESCE(r.evento_timestamp, r.data_criacao_chat, r.ingested_at) DESC, 
 LIMIT 5000
 """
 
-
 def fetch_events():
     with connection.cursor() as cursor:
         cursor.execute(QUERY)
@@ -317,8 +316,8 @@ def dashboard_api(request):
             where_clauses.append("c.current_funnel_stage IN (%s, %s)")
             params.extend(["waiting", "Em espera"])
         elif status == "Em atendimento":
-            where_clauses.append("c.current_funnel_stage = %s")
-            params.append("Em atendimento")
+            where_clauses.append("c.current_funnel_stage IN (%s, %s)")
+            params.extend(["Em atendimento", "active"])
         elif status == "Finalizado":
             where_clauses.append("c.current_funnel_stage IN (%s, %s, %s)")
             params.extend(["Finalizado", "finished", "closed"])
@@ -342,14 +341,14 @@ def dashboard_api(request):
     stats_query = f"""
         WITH filtered AS (
           SELECT *
-          FROM conversations c
+          FROM tmp_dashboard_conversations c
           {where_sql}
         ),
         bot_events AS (
           SELECT
             m.chat_id,
             MIN(m."timestamp") AS bot_transfer_ts
-          FROM messages m
+          FROM tmp_dashboard_messages m
           JOIN filtered f ON f.chat_id = m.chat_id
           WHERE m.from_client = false
             AND m.content IS NOT NULL
@@ -370,7 +369,7 @@ def dashboard_api(request):
             f.chat_id,
             MIN(m."timestamp") FILTER (WHERE m.from_client = true) AS first_client_ts
           FROM filtered f
-          JOIN messages m ON m.chat_id = f.chat_id
+          JOIN tmp_dashboard_messages m ON m.chat_id = f.chat_id
           GROUP BY f.chat_id
         ),
         business_duration AS (
@@ -407,7 +406,7 @@ def dashboard_api(request):
           SELECT
             m.chat_id,
             MIN(m."timestamp") AS first_human_ts
-          FROM messages m
+          FROM tmp_dashboard_messages m
           JOIN bot_events b ON b.chat_id = m.chat_id
           WHERE m.from_client = false
             AND m."timestamp" > b.bot_transfer_ts
@@ -465,7 +464,7 @@ def dashboard_api(request):
     stage_count_query = f"""
         WITH filtered AS (
           SELECT *
-          FROM conversations c
+          FROM tmp_dashboard_conversations c
           {where_sql}
         ),
         normalized AS (
@@ -491,7 +490,7 @@ def dashboard_api(request):
     contacts_breakdown_query = f"""
         WITH filtered AS (
           SELECT *
-          FROM conversations c
+          FROM tmp_dashboard_conversations c
           {where_sql}
         ),
         normalized AS (
@@ -515,6 +514,130 @@ def dashboard_api(request):
 
     try:
         with connection.cursor() as cursor:
+            cursor.execute("DROP TABLE IF EXISTS tmp_dashboard_messages")
+            cursor.execute("DROP TABLE IF EXISTS tmp_dashboard_conversations")
+            cursor.execute("DROP TABLE IF EXISTS tmp_dashboard_raw_base")
+
+            cursor.execute(
+                f"""
+                CREATE TEMP TABLE tmp_dashboard_raw_base AS
+                SELECT
+                  r.id,
+                  r.chat_id,
+                  COALESCE(r.evento_timestamp, r.data_criacao_chat, r.ingested_at) AS event_ts,
+                  r.status_conversa AS current_funnel_stage,
+                  r.vendedor_nome AS attendant_name,
+                  r.valor_orcamento AS budget_value,
+                  r.motivo_perda AS loss_reason,
+                  r.data_criacao_chat AS start_time,
+                  CASE
+                    WHEN NULLIF(BTRIM(COALESCE(r.data_fechamento, '')), '') IS NULL THEN NULL
+                    WHEN r.data_fechamento ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}'
+                      THEN r.data_fechamento::timestamptz
+                    ELSE NULL
+                  END AS end_time,
+                  r.msg_tipo AS message_type,
+                  r.msg_conteudo AS content,
+                  {MSG_FROM_CLIENT_SQL} AS from_client
+                FROM smclick_raw_events r
+                WHERE r.chat_id IS NOT NULL;
+                """
+            )
+            cursor.execute(
+                "CREATE INDEX tmp_dashboard_raw_base_chat_idx ON tmp_dashboard_raw_base (chat_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX tmp_dashboard_raw_base_ts_idx ON tmp_dashboard_raw_base (event_ts)"
+            )
+
+            cursor.execute(
+                """
+                CREATE TEMP TABLE tmp_dashboard_messages AS
+                WITH messages_ranked AS (
+                  SELECT
+                    rb.id,
+                    rb.chat_id,
+                    rb.event_ts AS "timestamp",
+                    rb.from_client,
+                    rb.content,
+                    rb.message_type,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY
+                        rb.chat_id,
+                        rb.event_ts,
+                        rb.from_client,
+                        COALESCE(rb.message_type, ''),
+                        COALESCE(rb.content, '')
+                      ORDER BY rb.id DESC
+                    ) AS dedup_rank
+                  FROM tmp_dashboard_raw_base rb
+                  WHERE rb.message_type IS NOT NULL OR rb.content IS NOT NULL
+                )
+                SELECT
+                  mr.id::text AS message_id,
+                  mr.chat_id,
+                  mr."timestamp",
+                  mr.from_client,
+                  mr.content,
+                  mr.message_type
+                FROM messages_ranked mr
+                WHERE mr.dedup_rank = 1;
+                """
+            )
+            cursor.execute(
+                'CREATE INDEX tmp_dashboard_messages_chat_ts_idx ON tmp_dashboard_messages (chat_id, "timestamp")'
+            )
+
+            cursor.execute(
+                """
+                CREATE TEMP TABLE tmp_dashboard_conversations AS
+                WITH latest_event AS (
+                  SELECT DISTINCT ON (rb.chat_id)
+                    rb.chat_id,
+                    COALESCE(rb.current_funnel_stage, 'active') AS current_funnel_stage,
+                    rb.attendant_name,
+                    rb.loss_reason,
+                    COALESCE(rb.start_time, rb.event_ts) AS start_time,
+                    rb.end_time,
+                    rb.event_ts AS updated_at
+                  FROM tmp_dashboard_raw_base rb
+                  ORDER BY rb.chat_id, rb.event_ts DESC NULLS LAST, rb.id DESC
+                ),
+                latest_budget AS (
+                  SELECT DISTINCT ON (rb.chat_id)
+                    rb.chat_id,
+                    rb.budget_value
+                  FROM tmp_dashboard_raw_base rb
+                  WHERE rb.budget_value IS NOT NULL
+                    AND rb.budget_value > 0
+                  ORDER BY rb.chat_id, rb.event_ts DESC NULLS LAST, rb.id DESC
+                )
+                SELECT
+                  le.chat_id,
+                  le.current_funnel_stage,
+                  le.attendant_name,
+                  COALESCE(lb.budget_value, 0) AS budget_value,
+                  le.loss_reason,
+                  le.start_time,
+                  le.end_time,
+                  COALESCE(le.start_time, le.updated_at) AS created_at,
+                  le.updated_at,
+                  NULL::text AS ai_agent_rating,
+                  NULL::text AS ai_customer_sentiment,
+                  NULL::text AS ai_summary,
+                  NULL::text AS ai_suggestion,
+                  NULL::text AS contact_reason
+                FROM latest_event le
+                LEFT JOIN latest_budget lb ON lb.chat_id = le.chat_id;
+                """
+            )
+            cursor.execute(
+                "CREATE INDEX tmp_dashboard_conversations_chat_idx ON tmp_dashboard_conversations (chat_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX tmp_dashboard_conversations_filter_idx ON tmp_dashboard_conversations (current_funnel_stage, attendant_name, start_time, created_at)"
+            )
+
             cursor.execute(stats_query, params)
             stats_row = cursor.fetchone()
             stats = {
@@ -550,7 +673,7 @@ def dashboard_api(request):
             sdr_summary_query = f"""
                 WITH filtered AS (
                   SELECT *
-                  FROM conversations c
+                  FROM tmp_dashboard_conversations c
                   {where_sql}
                 ),
                 message_stats AS (
@@ -558,7 +681,7 @@ def dashboard_api(request):
                     m.chat_id,
                     SUM(CASE WHEN m.from_client = false THEN 1 ELSE 0 END) AS outbound_count,
                     SUM(CASE WHEN m.from_client = true THEN 1 ELSE 0 END) AS inbound_count
-                  FROM messages m
+                  FROM tmp_dashboard_messages m
                   JOIN filtered f ON f.chat_id = m.chat_id
                   GROUP BY m.chat_id
                 ),
@@ -566,7 +689,7 @@ def dashboard_api(request):
                   SELECT
                     m.chat_id,
                     MIN(m."timestamp") AS bot_transfer_ts
-                  FROM messages m
+                  FROM tmp_dashboard_messages m
                   JOIN filtered f ON f.chat_id = m.chat_id
                   WHERE m.from_client = false
                     AND m.content IS NOT NULL
@@ -595,14 +718,14 @@ def dashboard_api(request):
             sdr_daily_query = f"""
                 WITH filtered AS (
                   SELECT *
-                  FROM conversations c
+                  FROM tmp_dashboard_conversations c
                   {where_sql}
                 ),
                 message_stats AS (
                   SELECT
                     m.chat_id,
                     SUM(CASE WHEN m.from_client = false THEN 1 ELSE 0 END) AS outbound_count
-                  FROM messages m
+                  FROM tmp_dashboard_messages m
                   JOIN filtered f ON f.chat_id = m.chat_id
                   GROUP BY m.chat_id
                 )
@@ -620,14 +743,14 @@ def dashboard_api(request):
             sdr_transferred_daily_query = f"""
                 WITH filtered AS (
                   SELECT *
-                  FROM conversations c
+                  FROM tmp_dashboard_conversations c
                   {where_sql}
                 ),
                 bot_events AS (
                   SELECT
                     m.chat_id,
                     MIN(m."timestamp") AS bot_transfer_ts
-                  FROM messages m
+                  FROM tmp_dashboard_messages m
                   JOIN filtered f ON f.chat_id = m.chat_id
                   WHERE m.from_client = false
                     AND m.content IS NOT NULL
@@ -663,14 +786,14 @@ def dashboard_api(request):
                       'áàâãäéèêëíìîïóòôõöúùûüç',
                       'aaaaaeeeeiiiiooooouuuuc'
                     ) AS reason_norm
-                  FROM conversations c
+                  FROM tmp_dashboard_conversations c
                   {where_sql}
                 ),
                 bot_events AS (
                   SELECT
                     m.chat_id,
                     MIN(m."timestamp") AS bot_transfer_ts
-                  FROM messages m
+                  FROM tmp_dashboard_messages m
                   JOIN filtered f ON f.chat_id = m.chat_id
                   WHERE m.from_client = false
                     AND m.content IS NOT NULL
@@ -691,7 +814,7 @@ def dashboard_api(request):
                     m.chat_id,
                     SUM(CASE WHEN m.from_client = false THEN 1 ELSE 0 END) AS outbound_count,
                     MIN(m."timestamp") FILTER (WHERE m.from_client = true) AS first_client_ts
-                  FROM messages m
+                  FROM tmp_dashboard_messages m
                   JOIN filtered f ON f.chat_id = m.chat_id
                   GROUP BY m.chat_id
                 ),
@@ -704,7 +827,7 @@ def dashboard_api(request):
                         ''
                       )::numeric
                     ) AS max_budget_msg
-                  FROM messages m
+                  FROM tmp_dashboard_messages m
                   JOIN filtered f ON f.chat_id = m.chat_id
                   JOIN LATERAL regexp_matches(
                     m.content,
@@ -748,7 +871,7 @@ def dashboard_api(request):
                   SELECT
                     m.chat_id,
                     MIN(m."timestamp") AS first_human_ts
-                  FROM messages m
+                  FROM tmp_dashboard_messages m
                   JOIN bot_events b ON b.chat_id = m.chat_id
                   WHERE m.from_client = false
                     AND m."timestamp" > b.bot_transfer_ts
@@ -849,7 +972,7 @@ def dashboard_api(request):
             vendor_scores_query = f"""
                 WITH filtered AS (
                   SELECT *
-                  FROM conversations c
+                  FROM tmp_dashboard_conversations c
                   {where_sql}
                 )
                 SELECT
