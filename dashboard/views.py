@@ -71,6 +71,41 @@ def events_api(request):
         return JsonResponse({"error": str(exc)}, status=500)
 
 
+def _owners_view_id_column():
+    """
+    Resolve coluna identificadora de conversa na view public.vw_conversations_owners.
+    Retorna None quando nao estiver em PostgreSQL, view ausente ou sem coluna compativel.
+    """
+    if connection.vendor != "postgresql":
+        return None
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'vw_conversations_owners'
+                ORDER BY ordinal_position
+                """
+            )
+            cols = {row[0] for row in cursor.fetchall()}
+        for candidate in (
+            "chat_id",
+            "conversation_id",
+            "conversation_uuid",
+            "conversa_id",
+            "chat_uuid",
+            "protocolo",
+            "protocol",
+        ):
+            if candidate in cols:
+                return candidate
+    except Exception:
+        return None
+    return None
+
+
 def _messages_union_sql():
     return """
         SELECT
@@ -397,6 +432,31 @@ def dashboard_api(request):
         COALESCE(c.start_time, c.created_at, c.end_time) DESC NULLS LAST,
         c.created_at DESC NULLS LAST
     """
+    owners_id_col = _owners_view_id_column()
+    owners_cte_sql = ""
+    owners_join_sql = ""
+    owners_norm_select = "''::text AS owner_norm,"
+    if owners_id_col:
+        owners_cte_sql = f"""
+        ,
+        owners_raw AS (
+          SELECT
+            NULLIF(BTRIM(v.{owners_id_col}::text), '') AS chat_id,
+            lower(to_jsonb(v)::text) AS owner_norm
+          FROM public.vw_conversations_owners v
+          WHERE v.{owners_id_col} IS NOT NULL
+        ),
+        owners AS (
+          SELECT
+            chat_id,
+            string_agg(owner_norm, ' ' ORDER BY owner_norm) AS owner_norm
+          FROM owners_raw
+          WHERE chat_id IS NOT NULL
+          GROUP BY chat_id
+        )
+        """
+        owners_join_sql = "LEFT JOIN owners o ON o.chat_id = f.chat_id"
+        owners_norm_select = "COALESCE(o.owner_norm, ''::text) AS owner_norm,"
 
     stats_query = f"""
         WITH filtered AS (
@@ -603,7 +663,9 @@ def dashboard_api(request):
             sdr_summary_query = f"""
                 WITH filtered AS (
                   {filtered_base_sql}
-                ),
+                )
+                {owners_cte_sql}
+                ,
                 classified AS (
                   SELECT
                     f.chat_id,
@@ -617,8 +679,10 @@ def dashboard_api(request):
                       'áàâãäéèêëíìîïóòôõöúùûüç',
                       'aaaaaeeeeiiiiooooouuuuc'
                     ) AS stage_norm,
+                    {owners_norm_select}
                     f.attendant_name
                   FROM filtered f
+                  {owners_join_sql}
                 ),
                 message_stats AS (
                   SELECT
@@ -651,17 +715,26 @@ def dashboard_api(request):
                 )
                 SELECT
                   COUNT(*) AS total_contacts,
-                  COUNT(*) FILTER (WHERE cl.reason_norm ~ 'rastreio') AS total_tracking,
+                  COUNT(*) FILTER (
+                    WHERE cl.reason_norm ~ 'rastreio'
+                       OR cl.owner_norm ~ 'rastreio'
+                  ) AS total_tracking,
                   COUNT(*) FILTER (
                     WHERE cl.reason_norm ~ '(sac|pos[- ]?venda|duvidas?|suporte)'
+                       OR cl.owner_norm ~ '(sac|pos[- ]?venda|duvidas?|suporte)'
                   ) AS total_sac,
                   COUNT(*) FILTER (
                     WHERE cl.stage_norm IN ('waiting', 'em espera', 'aguardando')
+                       OR cl.owner_norm ~ '(waiting|em espera|aguardando)'
                   ) AS total_waiting,
                   COUNT(*) FILTER (
-                    WHERE f.attendant_name IS NOT NULL
+                    WHERE (
+                        f.attendant_name IS NOT NULL
+                        OR cl.owner_norm ~ '(vendas|venda|comercial)'
+                    )
                       AND cl.stage_norm NOT IN ('waiting', 'em espera', 'aguardando')
                       AND cl.reason_norm !~ '(sac|pos[- ]?venda|duvidas?|suporte|rastreio)'
+                      AND cl.owner_norm !~ '(sac|pos[- ]?venda|duvidas?|suporte|rastreio|waiting|em espera|aguardando)'
                   ) AS total_sales,
                   COUNT(*) FILTER (WHERE b.bot_transfer_ts IS NOT NULL) AS total_transferred,
                   COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS total_dead
