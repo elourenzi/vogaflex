@@ -143,6 +143,8 @@ input {
   border-radius: 16px;
   background: #ffffff;
   height: fit-content;
+  max-height: calc(100vh - 120px);
+  overflow: auto;
 }
 
 .dashboard-tab {
@@ -160,6 +162,57 @@ input {
   background: rgba(200, 38, 80, 0.12);
   border-color: rgba(200, 38, 80, 0.3);
   color: var(--accent);
+}
+
+.dashboard-submenu {
+  display: grid;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.dashboard-submenu-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  padding: 4px 8px;
+}
+
+.dashboard-subitem {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: #f7f8fa;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.dashboard-subitem:hover {
+  border-color: rgba(47, 48, 61, 0.2);
+}
+
+.dashboard-subitem.is-active {
+  border-color: rgba(200, 38, 80, 0.35);
+  background: rgba(200, 38, 80, 0.1);
+  color: var(--accent);
+}
+
+.dashboard-subitem-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.dashboard-subitem-meta {
+  color: var(--muted);
+  font-size: 0.75rem;
+  flex-shrink: 0;
 }
 
 .dashboard-content {

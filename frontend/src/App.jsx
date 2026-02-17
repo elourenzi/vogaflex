@@ -1251,6 +1251,29 @@ function AppContent({ onLogout }) {
               >
                 Vendedores
               </button>
+              {dashboardTab === "vendors" ? (
+                <div className="dashboard-submenu">
+                  {vendorList.length === 0 ? (
+                    <p className="dashboard-submenu-empty">Sem vendedores no período.</p>
+                  ) : (
+                    vendorList.map((vendor) => (
+                      <button
+                        key={vendor.vendedor}
+                        type="button"
+                        className={`dashboard-subitem${
+                          dashboardVendor === vendor.vendedor ? " is-active" : ""
+                        }`}
+                        onClick={() => setDashboardVendor(vendor.vendedor)}
+                      >
+                        <span className="dashboard-subitem-name">{vendor.vendedor}</span>
+                        <span className="dashboard-subitem-meta">
+                          {formatCount(vendor.contacts_received)}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : null}
             </aside>
             <div className="dashboard-content">
               <div className="dashboard-filters">
@@ -1437,165 +1460,140 @@ function AppContent({ onLogout }) {
                       <div className="dashboard-section">
                         <div className="section-head">
                           <h3>Comparativo por vendedor</h3>
-                          <p className="muted">Selecione um vendedor para detalhes.</p>
+                          <p className="muted">
+                            Selecione um vendedor no menu lateral para ver os detalhes.
+                          </p>
                         </div>
-                        <div className="vendor-layout">
-                          <div className="vendor-list">
-                            {vendorList.length === 0 ? (
-                              <p className="empty">Sem vendedores no período.</p>
-                            ) : (
-                              vendorList.map((vendor) => (
-                                <button
-                                  key={vendor.vendedor}
-                                  type="button"
-                                  className={`vendor-item${
-                                    dashboardVendor === vendor.vendedor ? " is-active" : ""
-                                  }`}
-                                  onClick={() => setDashboardVendor(vendor.vendedor)}
-                                >
-                                  <div className="vendor-name">{vendor.vendedor}</div>
-                                  <div className="vendor-meta">
-                                    {formatCount(vendor.contacts_received)} contatos ·{" "}
-                                    {formatPercent(
-                                      vendor.budgets_detected_count || vendor.budgets_count || 0,
-                                      vendor.contacts_received || 0
-                                    )} orçamentos · IA {formatScore(vendor.avg_score || 0)}
-                                  </div>
-                                </button>
-                              ))
-                            )}
-                          </div>
-                          <div className="vendor-detail">
-                            {!selectedVendorData ? (
-                              <p className="empty">Selecione um vendedor.</p>
-                            ) : (
-                              <>
-                                <div className="vendor-header">
-                                  <h3>{selectedVendorData.vendedor}</h3>
-                                  <span className="tag">
-                                    {formatCount(selectedVendorData.contacts_received)} contatos
-                                  </span>
-                                </div>
-                                <div className="funnel-grid">
-                                  {[
-                                    {
-                                      label: "Contatos",
-                                      value: selectedVendorData.contacts_received || 0,
-                                      note: "Base do vendedor",
-                                      clickable: true,
-                                    },
-                                    {
-                                      label: "Orçamentos detectados",
-                                      value:
-                                        selectedVendorData.budgets_detected_count ||
+                        <div className="vendor-detail">
+                          {!selectedVendorData ? (
+                            <p className="empty">Selecione um vendedor.</p>
+                          ) : (
+                            <>
+                              <div className="vendor-header">
+                                <h3>{selectedVendorData.vendedor}</h3>
+                                <span className="tag">
+                                  {formatCount(selectedVendorData.contacts_received)} contatos
+                                </span>
+                              </div>
+                              <div className="funnel-grid">
+                                {[
+                                  {
+                                    label: "Contatos",
+                                    value: selectedVendorData.contacts_received || 0,
+                                    note: "Base do vendedor",
+                                    clickable: true,
+                                  },
+                                  {
+                                    label: "Orçamentos detectados",
+                                    value:
+                                      selectedVendorData.budgets_detected_count ||
+                                      selectedVendorData.budgets_count ||
+                                      0,
+                                    note: `${formatPercent(
+                                      selectedVendorData.budgets_detected_count ||
                                         selectedVendorData.budgets_count ||
                                         0,
-                                      note: `${formatPercent(
-                                        selectedVendorData.budgets_detected_count ||
-                                          selectedVendorData.budgets_count ||
-                                          0,
-                                        selectedVendorData.contacts_received || 0
-                                      )} de conversão`,
-                                    },
-                                    {
-                                      label: "Morreu",
-                                      value: selectedVendorData.dead_contacts || 0,
-                                      note: `${formatPercent(
-                                        selectedVendorData.dead_contacts || 0,
-                                        selectedVendorData.contacts_received || 0
-                                      )} do total`,
-                                    },
-                                  ].map((item) =>
-                                    item.clickable ? (
-                                      <button
-                                        key={item.label}
-                                        type="button"
-                                        className={`funnel-step is-clickable${
-                                          vendorBreakdownOpen ? " is-active" : ""
-                                        }`}
-                                        onClick={() =>
-                                          setVendorBreakdownOpen((open) => !open)
-                                        }
-                                        aria-expanded={vendorBreakdownOpen}
-                                      >
-                                        <p className="stat-label">{item.label}</p>
-                                        <p className="stat-value">
-                                          {formatCount(item.value)}
-                                        </p>
-                                        <p className="stat-foot">{item.note}</p>
-                                      </button>
-                                    ) : (
-                                      <article className="funnel-step" key={item.label}>
-                                        <p className="stat-label">{item.label}</p>
-                                        <p className="stat-value">
-                                          {formatCount(item.value)}
-                                        </p>
-                                        <p className="stat-foot">{item.note}</p>
-                                      </article>
-                                    )
-                                  )}
-                                </div>
-                                <div className="vendor-metrics">
-                                  <article className="metric-card">
-                                    <p className="stat-label">TMA</p>
-                                    <p className="stat-value">
-                                      {formatDuration(
-                                        selectedVendorData.avg_duration_seconds || 0
-                                      )}
-                                    </p>
-                                    <p className="stat-foot">Tempo médio</p>
-                                  </article>
-                                  <article className="metric-card">
-                                    <p className="stat-label">TME</p>
-                                    <p className="stat-value">
-                                      {formatDuration(
-                                        selectedVendorData.avg_handoff_seconds || 0
-                                      )}
-                                    </p>
-                                    <p className="stat-foot">Tempo de espera</p>
-                                  </article>
-                                  <article className="metric-card">
-                                    <p className="stat-label">Score IA</p>
-                                    <p className="stat-value">
-                                      {formatScore(selectedVendorData.avg_score || 0)}
-                                    </p>
-                                    <p className="stat-foot">Média 0–10</p>
-                                  </article>
-                                  <article className="metric-card">
-                                    <p className="stat-label">Somatória orçada (registrado)</p>
-                                    <p className="stat-value">
-                                      {formatCurrency(selectedVendorData.budgets_sum || 0)}
-                                    </p>
-                                    <p className="stat-foot">Valor total</p>
-                                  </article>
-                                  <article className="metric-card">
-                                    <p className="stat-label">Somatória orçada (mensagens)</p>
-                                    <p className="stat-value">
-                                      {formatCurrency(
-                                        selectedVendorData.budgets_sum_detected || 0
-                                      )}
-                                    </p>
-                                    <p className="stat-foot">Não registrado no CRM</p>
-                                  </article>
-                                </div>
-                                <div className="score-panel">
-                                  <h4>Score do bot</h4>
-                                  {selectedVendorScores.length === 0 ? (
-                                    <p className="empty">Sem scores no período.</p>
+                                      selectedVendorData.contacts_received || 0
+                                    )} de conversão`,
+                                  },
+                                  {
+                                    label: "Morreu",
+                                    value: selectedVendorData.dead_contacts || 0,
+                                    note: `${formatPercent(
+                                      selectedVendorData.dead_contacts || 0,
+                                      selectedVendorData.contacts_received || 0
+                                    )} do total`,
+                                  },
+                                ].map((item) =>
+                                  item.clickable ? (
+                                    <button
+                                      key={item.label}
+                                      type="button"
+                                      className={`funnel-step is-clickable${
+                                        vendorBreakdownOpen ? " is-active" : ""
+                                      }`}
+                                      onClick={() =>
+                                        setVendorBreakdownOpen((open) => !open)
+                                      }
+                                      aria-expanded={vendorBreakdownOpen}
+                                    >
+                                      <p className="stat-label">{item.label}</p>
+                                      <p className="stat-value">
+                                        {formatCount(item.value)}
+                                      </p>
+                                      <p className="stat-foot">{item.note}</p>
+                                    </button>
                                   ) : (
-                                    <div className="score-grid">
-                                      {selectedVendorScores.map((score) => (
-                                        <div className="score-chip" key={score.score}>
-                                          <span>{score.score}</span>
-                                          <strong>{formatCount(score.total)}</strong>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              </>
-                            )}
-                          </div>
+                                    <article className="funnel-step" key={item.label}>
+                                      <p className="stat-label">{item.label}</p>
+                                      <p className="stat-value">
+                                        {formatCount(item.value)}
+                                      </p>
+                                      <p className="stat-foot">{item.note}</p>
+                                    </article>
+                                  )
+                                )}
+                              </div>
+                              <div className="vendor-metrics">
+                                <article className="metric-card">
+                                  <p className="stat-label">TMA</p>
+                                  <p className="stat-value">
+                                    {formatDuration(
+                                      selectedVendorData.avg_duration_seconds || 0
+                                    )}
+                                  </p>
+                                  <p className="stat-foot">Tempo médio</p>
+                                </article>
+                                <article className="metric-card">
+                                  <p className="stat-label">TME</p>
+                                  <p className="stat-value">
+                                    {formatDuration(
+                                      selectedVendorData.avg_handoff_seconds || 0
+                                    )}
+                                  </p>
+                                  <p className="stat-foot">Tempo de espera</p>
+                                </article>
+                                <article className="metric-card">
+                                  <p className="stat-label">Score IA</p>
+                                  <p className="stat-value">
+                                    {formatScore(selectedVendorData.avg_score || 0)}
+                                  </p>
+                                  <p className="stat-foot">Média 0–10</p>
+                                </article>
+                                <article className="metric-card">
+                                  <p className="stat-label">Somatória orçada (registrado)</p>
+                                  <p className="stat-value">
+                                    {formatCurrency(selectedVendorData.budgets_sum || 0)}
+                                  </p>
+                                  <p className="stat-foot">Valor total</p>
+                                </article>
+                                <article className="metric-card">
+                                  <p className="stat-label">Somatória orçada (mensagens)</p>
+                                  <p className="stat-value">
+                                    {formatCurrency(
+                                      selectedVendorData.budgets_sum_detected || 0
+                                    )}
+                                  </p>
+                                  <p className="stat-foot">Não registrado no CRM</p>
+                                </article>
+                              </div>
+                              <div className="score-panel">
+                                <h4>Score do bot</h4>
+                                {selectedVendorScores.length === 0 ? (
+                                  <p className="empty">Sem scores no período.</p>
+                                ) : (
+                                  <div className="score-grid">
+                                    {selectedVendorScores.map((score) => (
+                                      <div className="score-chip" key={score.score}>
+                                        <span>{score.score}</span>
+                                        <strong>{formatCount(score.total)}</strong>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     </>
