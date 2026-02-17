@@ -714,7 +714,7 @@ def dashboard_api(request):
                   GROUP BY m.chat_id
                 )
                 SELECT
-                  COUNT(*) AS total_contacts,
+                  COUNT(*) FILTER (WHERE b.bot_transfer_ts IS NULL) AS total_contacts,
                   COUNT(*) FILTER (
                     WHERE cl.reason_norm ~ 'rastreio'
                        OR cl.owner_norm ~ 'rastreio'
@@ -775,10 +775,30 @@ def dashboard_api(request):
                   FROM messages m
                   JOIN filtered f ON f.chat_id = m.chat_id
                   GROUP BY m.chat_id
+                ),
+                bot_events AS (
+                  SELECT
+                    m.chat_id,
+                    MIN(m."timestamp") AS bot_transfer_ts
+                  FROM messages m
+                  JOIN filtered f ON f.chat_id = m.chat_id
+                  WHERE m.from_client = false
+                    AND m.content IS NOT NULL
+                    AND (
+                      m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                      OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                      OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                      OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
+                    )
+                  GROUP BY m.chat_id
                 )
                 SELECT
                   date_trunc('day', COALESCE(f.start_time, f.created_at) AT TIME ZONE 'America/Sao_Paulo')::date AS day,
-                  COUNT(*) AS contacts,
+                  COUNT(*) FILTER (WHERE b.bot_transfer_ts IS NULL) AS contacts,
                   COUNT(*) FILTER (
                     WHERE (
                         f.attendant_name IS NOT NULL
@@ -804,6 +824,7 @@ def dashboard_api(request):
                 FROM filtered f
                 JOIN classified cl ON cl.chat_id = f.chat_id
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
+                LEFT JOIN bot_events b ON b.chat_id = f.chat_id
                 GROUP BY day
                 ORDER BY day;
             """
@@ -988,7 +1009,7 @@ def dashboard_api(request):
                 )
                 SELECT
                   f.attendant_name AS vendedor,
-                  COUNT(*) AS contacts_received,
+                  COUNT(*) FILTER (WHERE b.bot_transfer_ts IS NULL) AS contacts_received,
                   COUNT(*) FILTER (
                     WHERE f.budget_value > 0
                       AND NOT (f.reason_norm ~ '{support_reason_pattern}')
@@ -1028,6 +1049,7 @@ def dashboard_api(request):
                     )::numeric
                   ) AS avg_score
                 FROM filtered f
+                LEFT JOIN bot_events b ON b.chat_id = f.chat_id
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
                 LEFT JOIN budget_values bv ON bv.chat_id = f.chat_id
                 LEFT JOIN business_duration bd ON bd.chat_id = f.chat_id
