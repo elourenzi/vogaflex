@@ -483,45 +483,43 @@ def dashboard_api(request):
             )
           GROUP BY m.chat_id
         ),
-        first_contact AS (
+        conversation_times AS (
           SELECT
             f.chat_id,
-            MIN(m."timestamp") FILTER (WHERE m.from_client = true) AS first_client_ts
+            COALESCE(f.start_time, f.created_at) AS opened_ts,
+            f.end_time
           FROM filtered f
-          JOIN messages m ON m.chat_id = f.chat_id
-          GROUP BY f.chat_id
+          WHERE COALESCE(f.start_time, f.created_at) IS NOT NULL
+            AND f.end_time IS NOT NULL
+            AND LOWER(COALESCE(f.current_funnel_stage, '')) IN ('finalizado', 'finished', 'closed')
         ),
         business_duration AS (
           SELECT
-            fc.chat_id,
+            ct.chat_id,
             SUM(
               GREATEST(
                 0,
                 EXTRACT(
                   EPOCH FROM (
-                    LEAST(f.end_time AT TIME ZONE 'America/Sao_Paulo', day_end)
-                    - GREATEST(fc.first_client_ts AT TIME ZONE 'America/Sao_Paulo', day_start)
+                    LEAST(ct.end_time AT TIME ZONE 'America/Sao_Paulo', day_end)
+                    - GREATEST(ct.opened_ts AT TIME ZONE 'America/Sao_Paulo', day_start)
                   )
                 )
               )
             ) AS business_seconds
-          FROM first_contact fc
-          JOIN filtered f ON f.chat_id = fc.chat_id
+          FROM conversation_times ct
           JOIN LATERAL (
             SELECT
               day::timestamp + time '08:00' AS day_start,
               day::timestamp + time '18:00' AS day_end
             FROM generate_series(
-              date_trunc('day', fc.first_client_ts AT TIME ZONE 'America/Sao_Paulo'),
-              date_trunc('day', f.end_time AT TIME ZONE 'America/Sao_Paulo'),
+              date_trunc('day', ct.opened_ts AT TIME ZONE 'America/Sao_Paulo'),
+              date_trunc('day', ct.end_time AT TIME ZONE 'America/Sao_Paulo'),
               interval '1 day'
             ) AS day
             WHERE EXTRACT(DOW FROM day) BETWEEN 1 AND 5
           ) d ON TRUE
-          WHERE fc.first_client_ts IS NOT NULL
-            AND f.end_time IS NOT NULL
-            AND LOWER(COALESCE(f.current_funnel_stage, '')) IN ('finalizado', 'finished', 'closed')
-          GROUP BY fc.chat_id
+          GROUP BY ct.chat_id
         ),
         human_events AS (
           SELECT
@@ -955,11 +953,20 @@ def dashboard_api(request):
                 message_stats AS (
                   SELECT
                     m.chat_id,
-                    SUM(CASE WHEN m.from_client = false THEN 1 ELSE 0 END) AS outbound_count,
-                    MIN(m."timestamp") FILTER (WHERE m.from_client = true) AS first_client_ts
+                    SUM(CASE WHEN m.from_client = false THEN 1 ELSE 0 END) AS outbound_count
                   FROM messages m
                   JOIN filtered f ON f.chat_id = m.chat_id
                   GROUP BY m.chat_id
+                ),
+                conversation_times AS (
+                  SELECT
+                    f.chat_id,
+                    COALESCE(f.start_time, f.created_at) AS opened_ts,
+                    f.end_time
+                  FROM filtered f
+                  WHERE COALESCE(f.start_time, f.created_at) IS NOT NULL
+                    AND f.end_time IS NOT NULL
+                    AND LOWER(COALESCE(f.current_funnel_stage, '')) IN ('finalizado', 'finished', 'closed')
                 ),
                 budget_values AS (
                   SELECT
@@ -992,35 +999,31 @@ def dashboard_api(request):
                 ),
                 business_duration AS (
                   SELECT
-                    ms.chat_id,
+                    ct.chat_id,
                     SUM(
                       GREATEST(
                         0,
                         EXTRACT(
                           EPOCH FROM (
-                            LEAST(f.end_time AT TIME ZONE 'America/Sao_Paulo', day_end)
-                            - GREATEST(ms.first_client_ts AT TIME ZONE 'America/Sao_Paulo', day_start)
+                            LEAST(ct.end_time AT TIME ZONE 'America/Sao_Paulo', day_end)
+                            - GREATEST(ct.opened_ts AT TIME ZONE 'America/Sao_Paulo', day_start)
                           )
                         )
                       )
                     ) AS business_seconds
-                  FROM message_stats ms
-                  JOIN filtered f ON f.chat_id = ms.chat_id
+                  FROM conversation_times ct
                   JOIN LATERAL (
                     SELECT
                       day::timestamp + time '08:00' AS day_start,
                       day::timestamp + time '18:00' AS day_end
                     FROM generate_series(
-                      date_trunc('day', ms.first_client_ts AT TIME ZONE 'America/Sao_Paulo'),
-                      date_trunc('day', f.end_time AT TIME ZONE 'America/Sao_Paulo'),
+                      date_trunc('day', ct.opened_ts AT TIME ZONE 'America/Sao_Paulo'),
+                      date_trunc('day', ct.end_time AT TIME ZONE 'America/Sao_Paulo'),
                       interval '1 day'
                     ) AS day
                     WHERE EXTRACT(DOW FROM day) BETWEEN 1 AND 5
                   ) d ON TRUE
-                  WHERE ms.first_client_ts IS NOT NULL
-                    AND f.end_time IS NOT NULL
-                    AND LOWER(COALESCE(f.current_funnel_stage, '')) IN ('finalizado', 'finished', 'closed')
-                  GROUP BY ms.chat_id
+                  GROUP BY ct.chat_id
                 ),
                 human_events AS (
                   SELECT
