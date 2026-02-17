@@ -727,7 +727,10 @@ function AppContent({ onLogout }) {
       map.set(entry.day, {
         day: entry.day,
         contacts: entry.contacts || 0,
+        sales: entry.sales || 0,
         tracking: entry.tracking || 0,
+        sac: entry.sac || 0,
+        waiting: entry.waiting || 0,
         dead: entry.dead || 0,
         transferred: 0,
       });
@@ -737,7 +740,10 @@ function AppContent({ onLogout }) {
       const current = map.get(entry.day) || {
         day: entry.day,
         contacts: 0,
+        sales: 0,
         tracking: 0,
+        sac: 0,
+        waiting: 0,
         dead: 0,
         transferred: 0,
       };
@@ -1369,13 +1375,13 @@ function AppContent({ onLogout }) {
                             />
                           </article>
                           <article className="metric-card">
-                            <p className="stat-label">Rastreio/Vendas</p>
+                            <p className="stat-label">Vendas</p>
                             <p className="stat-value">
-                              {formatCount(sdrSummary.tracking || 0)}
+                              {formatCount(sdrSummary.sales || 0)}
                             </p>
                             <MiniBars
                               data={sdrSeriesTrimmed}
-                              valueKey="tracking"
+                              valueKey="sales"
                               color="rgba(47, 48, 61, 0.75)"
                             />
                           </article>

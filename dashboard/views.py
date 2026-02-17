@@ -747,6 +747,26 @@ def dashboard_api(request):
             sdr_daily_query = f"""
                 WITH filtered AS (
                   {filtered_base_sql}
+                )
+                {owners_cte_sql}
+                ,
+                classified AS (
+                  SELECT
+                    f.chat_id,
+                    translate(
+                      lower(COALESCE(f.contact_reason, '')),
+                      'áàâãäéèêëíìîïóòôõöúùûüç',
+                      'aaaaaeeeeiiiiooooouuuuc'
+                    ) AS reason_norm,
+                    translate(
+                      lower(COALESCE(f.current_funnel_stage, '')),
+                      'áàâãäéèêëíìîïóòôõöúùûüç',
+                      'aaaaaeeeeiiiiooooouuuuc'
+                    ) AS stage_norm,
+                    {owners_norm_select}
+                    f.attendant_name
+                  FROM filtered f
+                  {owners_join_sql}
                 ),
                 message_stats AS (
                   SELECT
@@ -759,9 +779,30 @@ def dashboard_api(request):
                 SELECT
                   date_trunc('day', COALESCE(f.start_time, f.created_at) AT TIME ZONE 'America/Sao_Paulo')::date AS day,
                   COUNT(*) AS contacts,
-                  COUNT(*) FILTER (WHERE f.attendant_name IS NOT NULL) AS tracking,
+                  COUNT(*) FILTER (
+                    WHERE (
+                        f.attendant_name IS NOT NULL
+                        OR cl.owner_norm ~ '(vendas|venda|comercial)'
+                    )
+                      AND cl.stage_norm NOT IN ('waiting', 'em espera', 'aguardando')
+                      AND cl.reason_norm !~ '(sac|pos[- ]?venda|duvidas?|suporte|rastreio)'
+                      AND cl.owner_norm !~ '(sac|pos[- ]?venda|duvidas?|suporte|rastreio|waiting|em espera|aguardando)'
+                  ) AS sales,
+                  COUNT(*) FILTER (
+                    WHERE cl.reason_norm ~ 'rastreio'
+                       OR cl.owner_norm ~ 'rastreio'
+                  ) AS tracking,
+                  COUNT(*) FILTER (
+                    WHERE cl.reason_norm ~ '(sac|pos[- ]?venda|duvidas?|suporte)'
+                       OR cl.owner_norm ~ '(sac|pos[- ]?venda|duvidas?|suporte)'
+                  ) AS sac,
+                  COUNT(*) FILTER (
+                    WHERE cl.stage_norm IN ('waiting', 'em espera', 'aguardando')
+                       OR cl.owner_norm ~ '(waiting|em espera|aguardando)'
+                  ) AS waiting,
                   COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS dead
                 FROM filtered f
+                JOIN classified cl ON cl.chat_id = f.chat_id
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
                 GROUP BY day
                 ORDER BY day;
@@ -1028,8 +1069,11 @@ def dashboard_api(request):
                 {
                     "day": row[0].isoformat() if row[0] else None,
                     "contacts": row[1],
-                    "tracking": row[2],
-                    "dead": row[3],
+                    "sales": row[2],
+                    "tracking": row[3],
+                    "sac": row[4],
+                    "waiting": row[5],
+                    "dead": row[6],
                 }
                 for row in sdr_daily_rows
             ]
