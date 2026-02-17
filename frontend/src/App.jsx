@@ -108,7 +108,7 @@ const formatDayLabel = (value) => {
 const buildMiniBarTooltip = (entry, valueKey) => {
   const dayLabel = formatDayLabel(entry?.day);
   const metricLabels = [
-    ["Novos contatos", "contacts"],
+    ["Contatos líquidos", "contacts"],
     ["Em espera", "waiting"],
     ["Vendas", "sales"],
     ["SAC", "sac"],
@@ -1384,7 +1384,7 @@ function AppContent({ onLogout }) {
                       <div className="dashboard-section">
                         <div className="section-head">
                           <h3>Resumo SDR</h3>
-                          <p className="muted">Leitura do funil de novos contatos.</p>
+                          <p className="muted">Leitura do funil de contatos líquidos (sem transferidos).</p>
                         </div>
                         <div className="funnel-grid">
                           {sdrFunnel.map((item) => (
@@ -1403,7 +1403,7 @@ function AppContent({ onLogout }) {
                         </div>
                         <div className="metric-grid">
                           <article className="metric-card">
-                            <p className="stat-label">Novos contatos</p>
+                            <p className="stat-label">Contatos líquidos</p>
                             <p className="stat-value">
                               {formatCount(sdrSummary.contacts || 0)}
                             </p>
@@ -1458,9 +1458,9 @@ function AppContent({ onLogout }) {
                         </div>
                         <div className="metric-grid">
                           <article className="metric-card">
-                            <p className="stat-label">Contatos recebidos</p>
+                            <p className="stat-label">Contatos líquidos</p>
                             <p className="stat-value">{formatCount(vendorTotals.contacts)}</p>
-                            <p className="stat-foot">Base do período</p>
+                            <p className="stat-foot">Base do período (sem transferidos)</p>
                           </article>
                           <article className="metric-card">
                             <p className="stat-label">Orçamentos detectados</p>
@@ -1517,15 +1517,15 @@ function AppContent({ onLogout }) {
                               <div className="vendor-header">
                                 <h3>{selectedVendorData.vendedor}</h3>
                                 <span className="tag">
-                                  {formatCount(selectedVendorData.contacts_received)} contatos
+                                  {formatCount(selectedVendorData.contacts_received)} contatos líquidos
                                 </span>
                               </div>
                               <div className="funnel-grid">
                                 {[
                                   {
-                                    label: "Contatos",
+                                    label: "Contatos líquidos",
                                     value: selectedVendorData.contacts_received || 0,
-                                    note: "Base do vendedor",
+                                    note: "Base líquida do vendedor",
                                     clickable: true,
                                   },
                                   {
@@ -1666,7 +1666,7 @@ function AppContent({ onLogout }) {
               <div>
                 <p className="stat-label">Estratificação de contatos</p>
                 <p className="stat-foot">
-                  {selectedVendorData?.vendedor || "Vendedor"} · Base{" "}
+                  {selectedVendorData?.vendedor || "Vendedor"} · Base líquida{" "}
                   {formatCount(contactsBreakdownTotal)}
                 </p>
               </div>
