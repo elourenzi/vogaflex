@@ -17,6 +17,10 @@ const timeFormatter = new Intl.DateTimeFormat("pt-BR", {
   timeStyle: "short",
 });
 
+const dateOnlyFormatter = new Intl.DateTimeFormat("pt-BR", {
+  dateStyle: "short",
+});
+
 const normalizeMoney = (value) => {
   if (typeof value === "number") return value;
   if (!value) return 0;
@@ -87,6 +91,41 @@ const formatTime = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "--";
   return timeFormatter.format(date);
+};
+
+const formatDayLabel = (value) => {
+  if (!value) return "--";
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const [year, month, day] = text.split("-");
+    return `${day}/${month}/${year}`;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return text;
+  return dateOnlyFormatter.format(date);
+};
+
+const buildMiniBarTooltip = (entry, valueKey) => {
+  const dayLabel = formatDayLabel(entry?.day);
+  const metricLabels = [
+    ["Novos contatos", "contacts"],
+    ["Em espera", "waiting"],
+    ["Vendas", "sales"],
+    ["SAC", "sac"],
+    ["Rastreio", "tracking"],
+    ["Transferidos", "transferred"],
+    ["Morreram", "dead"],
+  ];
+  const presentMetrics = metricLabels.filter(([, key]) => entry?.[key] !== undefined);
+  if (presentMetrics.length === 0) {
+    const value = Number(entry?.[valueKey]) || 0;
+    return `Data: ${dayLabel}\n${valueKey}: ${formatCount(value)}`;
+  }
+  const lines = [`Data: ${dayLabel}`];
+  presentMetrics.forEach(([label, key]) => {
+    lines.push(`${label}: ${formatCount(Number(entry?.[key]) || 0)}`);
+  });
+  return lines.join("\n");
 };
 
 const formatDuration = (seconds) => {
@@ -344,7 +383,7 @@ function MiniBars({ data, valueKey, color }) {
               height: `${height}%`,
               background: color,
             }}
-            title={`${day}: ${value}`}
+            title={buildMiniBarTooltip(entry, valueKey)}
           />
         );
       })}
