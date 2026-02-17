@@ -354,7 +354,7 @@ def dashboard_api(request):
     date_to = request.GET.get("date_to")
     vendedor = request.GET.get("vendedor")
 
-    where_clauses = []
+    where_clauses = ["c.chat_id IS NOT NULL"]
     params = []
     if status and status != "Todos":
         if status == "Triagem":
@@ -373,24 +373,34 @@ def dashboard_api(request):
         where_clauses.append("c.current_funnel_stage = %s")
         params.append(etapa)
     if date_from:
-        where_clauses.append("COALESCE(c.start_time, c.created_at) >= %s")
+        where_clauses.append(
+            "(COALESCE(c.start_time, c.created_at) AT TIME ZONE 'America/Sao_Paulo')::date >= %s::date"
+        )
         params.append(date_from)
     if date_to:
-        where_clauses.append("COALESCE(c.start_time, c.created_at) <= %s")
+        where_clauses.append(
+            "(COALESCE(c.start_time, c.created_at) AT TIME ZONE 'America/Sao_Paulo')::date <= %s::date"
+        )
         params.append(date_to)
     if vendedor and vendedor != "Todos":
         where_clauses.append("c.attendant_name = %s")
         params.append(vendedor)
 
-    where_sql = ""
-    if where_clauses:
-        where_sql = "WHERE " + " AND ".join(where_clauses)
+    where_sql = "WHERE " + " AND ".join(where_clauses)
+    filtered_base_sql = f"""
+      SELECT DISTINCT ON (c.chat_id)
+        c.*
+      FROM conversations c
+      {where_sql}
+      ORDER BY
+        c.chat_id,
+        COALESCE(c.start_time, c.created_at, c.end_time) DESC NULLS LAST,
+        c.created_at DESC NULLS LAST
+    """
 
     stats_query = f"""
         WITH filtered AS (
-          SELECT *
-          FROM conversations c
-          {where_sql}
+          {filtered_base_sql}
         ),
         bot_events AS (
           SELECT
@@ -511,9 +521,7 @@ def dashboard_api(request):
 
     stage_count_query = f"""
         WITH filtered AS (
-          SELECT *
-          FROM conversations c
-          {where_sql}
+          {filtered_base_sql}
         ),
         normalized AS (
           SELECT
@@ -537,9 +545,7 @@ def dashboard_api(request):
 
     contacts_breakdown_query = f"""
         WITH filtered AS (
-          SELECT *
-          FROM conversations c
-          {where_sql}
+          {filtered_base_sql}
         ),
         normalized AS (
           SELECT
@@ -596,9 +602,23 @@ def dashboard_api(request):
             )
             sdr_summary_query = f"""
                 WITH filtered AS (
-                  SELECT *
-                  FROM conversations c
-                  {where_sql}
+                  {filtered_base_sql}
+                ),
+                classified AS (
+                  SELECT
+                    f.chat_id,
+                    translate(
+                      lower(COALESCE(f.contact_reason, '')),
+                      'áàâãäéèêëíìîïóòôõöúùûüç',
+                      'aaaaaeeeeiiiiooooouuuuc'
+                    ) AS reason_norm,
+                    translate(
+                      lower(COALESCE(f.current_funnel_stage, '')),
+                      'áàâãäéèêëíìîïóòôõöúùûüç',
+                      'aaaaaeeeeiiiiooooouuuuc'
+                    ) AS stage_norm,
+                    f.attendant_name
+                  FROM filtered f
                 ),
                 message_stats AS (
                   SELECT
@@ -631,19 +651,29 @@ def dashboard_api(request):
                 )
                 SELECT
                   COUNT(*) AS total_contacts,
-                  COUNT(*) FILTER (WHERE f.attendant_name IS NOT NULL) AS total_tracking,
+                  COUNT(*) FILTER (WHERE cl.reason_norm ~ 'rastreio') AS total_tracking,
+                  COUNT(*) FILTER (
+                    WHERE cl.reason_norm ~ '(sac|pos[- ]?venda|duvidas?|suporte)'
+                  ) AS total_sac,
+                  COUNT(*) FILTER (
+                    WHERE cl.stage_norm IN ('waiting', 'em espera', 'aguardando')
+                  ) AS total_waiting,
+                  COUNT(*) FILTER (
+                    WHERE f.attendant_name IS NOT NULL
+                      AND cl.stage_norm NOT IN ('waiting', 'em espera', 'aguardando')
+                      AND cl.reason_norm !~ '(sac|pos[- ]?venda|duvidas?|suporte|rastreio)'
+                  ) AS total_sales,
                   COUNT(*) FILTER (WHERE b.bot_transfer_ts IS NOT NULL) AS total_transferred,
                   COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS total_dead
                 FROM filtered f
+                JOIN classified cl ON cl.chat_id = f.chat_id
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
                 LEFT JOIN bot_events b ON b.chat_id = f.chat_id;
             """
 
             sdr_daily_query = f"""
                 WITH filtered AS (
-                  SELECT *
-                  FROM conversations c
-                  {where_sql}
+                  {filtered_base_sql}
                 ),
                 message_stats AS (
                   SELECT
@@ -666,9 +696,7 @@ def dashboard_api(request):
 
             sdr_transferred_daily_query = f"""
                 WITH filtered AS (
-                  SELECT *
-                  FROM conversations c
-                  {where_sql}
+                  {filtered_base_sql}
                 ),
                 bot_events AS (
                   SELECT
@@ -702,16 +730,18 @@ def dashboard_api(request):
             support_reason_pattern = "(pos[- ]?venda|duvidas?|sac|rastreio)"
 
             vendor_summary_query = f"""
-                WITH filtered AS (
+                WITH filtered_base AS (
+                  {filtered_base_sql}
+                ),
+                filtered AS (
                   SELECT
-                    c.*,
+                    fb.*,
                     translate(
-                      lower(COALESCE(c.contact_reason, '')),
+                      lower(COALESCE(fb.contact_reason, '')),
                       'áàâãäéèêëíìîïóòôõöúùûüç',
                       'aaaaaeeeeiiiiooooouuuuc'
                     ) AS reason_norm
-                  FROM conversations c
-                  {where_sql}
+                  FROM filtered_base fb
                 ),
                 bot_events AS (
                   SELECT
@@ -895,9 +925,7 @@ def dashboard_api(request):
 
             vendor_scores_query = f"""
                 WITH filtered AS (
-                  SELECT *
-                  FROM conversations c
-                  {where_sql}
+                  {filtered_base_sql}
                 )
                 SELECT
                   f.attendant_name AS vendedor,
@@ -910,12 +938,15 @@ def dashboard_api(request):
             """
 
             cursor.execute(sdr_summary_query, params)
-            sdr_row = cursor.fetchone() or (0, 0, 0, 0)
+            sdr_row = cursor.fetchone() or (0, 0, 0, 0, 0, 0, 0)
             sdr_summary = {
                 "contacts": sdr_row[0] or 0,
                 "tracking": sdr_row[1] or 0,
-                "transferred": sdr_row[2] or 0,
-                "dead": sdr_row[3] or 0,
+                "sac": sdr_row[2] or 0,
+                "waiting": sdr_row[3] or 0,
+                "sales": sdr_row[4] or 0,
+                "transferred": sdr_row[5] or 0,
+                "dead": sdr_row[6] or 0,
             }
 
             cursor.execute(sdr_daily_query, params)

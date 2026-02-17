@@ -751,24 +751,24 @@ function AppContent({ onLogout }) {
   const sdrTotal = sdrSummary.contacts || 0;
   const sdrFunnel = [
     {
-      label: "Contatos",
-      value: sdrSummary.contacts || 0,
-      note: "Base total",
-    },
-    {
-      label: "Rastreio/Vendas",
+      label: "Rastreio",
       value: sdrSummary.tracking || 0,
       note: `${formatPercent(sdrSummary.tracking || 0, sdrTotal)} do total`,
     },
     {
-      label: "Transferido",
-      value: sdrSummary.transferred || 0,
-      note: `${formatPercent(sdrSummary.transferred || 0, sdrTotal)} do total`,
+      label: "Vendas",
+      value: sdrSummary.sales || 0,
+      note: `${formatPercent(sdrSummary.sales || 0, sdrTotal)} do total`,
     },
     {
-      label: "Morreu",
-      value: sdrSummary.dead || 0,
-      note: `${formatPercent(sdrSummary.dead || 0, sdrTotal)} do total`,
+      label: "SAC",
+      value: sdrSummary.sac || 0,
+      note: `${formatPercent(sdrSummary.sac || 0, sdrTotal)} do total`,
+    },
+    {
+      label: "Em espera",
+      value: sdrSummary.waiting || 0,
+      note: `${formatPercent(sdrSummary.waiting || 0, sdrTotal)} do total`,
     },
   ];
 
