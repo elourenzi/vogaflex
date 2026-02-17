@@ -751,9 +751,9 @@ function AppContent({ onLogout }) {
   const sdrTotal = sdrSummary.contacts || 0;
   const sdrFunnel = [
     {
-      label: "Rastreio",
-      value: sdrSummary.tracking || 0,
-      note: `${formatPercent(sdrSummary.tracking || 0, sdrTotal)} do total`,
+      label: "Em espera",
+      value: sdrSummary.waiting || 0,
+      note: `${formatPercent(sdrSummary.waiting || 0, sdrTotal)} do total`,
     },
     {
       label: "Vendas",
@@ -766,9 +766,9 @@ function AppContent({ onLogout }) {
       note: `${formatPercent(sdrSummary.sac || 0, sdrTotal)} do total`,
     },
     {
-      label: "Em espera",
-      value: sdrSummary.waiting || 0,
-      note: `${formatPercent(sdrSummary.waiting || 0, sdrTotal)} do total`,
+      label: "Rastreio",
+      value: sdrSummary.tracking || 0,
+      note: `${formatPercent(sdrSummary.tracking || 0, sdrTotal)} do total`,
     },
   ];
 
