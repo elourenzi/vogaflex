@@ -40,6 +40,9 @@ const normalizeBotText = (value) =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
+const isSdrAttendant = (name) =>
+  /(^|[^a-z])emill?y([^a-z]|$)/.test(normalizeBotText(name));
+
 const pickTimestamp = (item) =>
   new Date(item.evento_timestamp || item.data_criacao_chat || Date.now());
 
@@ -744,7 +747,10 @@ function AppContent({ onLogout }) {
   const sdrData = dashboardData?.sdr;
   const vendorData = dashboardData?.vendors;
   const vendorList = useMemo(
-    () => vendorData?.summary || EMPTY_LIST,
+    () =>
+      (vendorData?.summary || EMPTY_LIST).filter(
+        (item) => !isSdrAttendant(item?.vendedor)
+      ),
     [vendorData]
   );
   const vendorScores = useMemo(

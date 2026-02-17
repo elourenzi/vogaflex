@@ -865,7 +865,13 @@ def dashboard_api(request):
 
             support_reason_pattern = "(pos[- ]?venda|duvidas?|sac|rastreio)"
             budget_outlier_ceiling = 10000000
-            sdr_attendant_names_sql = "'emilly','emily'"
+            sdr_attendant_exclude_sql = """
+              translate(
+                lower(BTRIM(f.attendant_name)),
+                'áàâãäéèêëíìîïóòôõöúùûüç',
+                'aaaaaeeeeiiiiooooouuuuc'
+              ) ~ '(^|[^a-z])emill?y([^a-z]|$)'
+            """
 
             vendor_summary_query = f"""
                 WITH filtered_base AS (
@@ -1132,7 +1138,7 @@ def dashboard_api(request):
                 LEFT JOIN business_duration bd ON bd.chat_id = f.chat_id
                 LEFT JOIN business_handoff bh ON bh.chat_id = f.chat_id
                 WHERE f.attendant_name IS NOT NULL
-                  AND LOWER(BTRIM(f.attendant_name)) NOT IN ({sdr_attendant_names_sql})
+                  AND NOT ({sdr_attendant_exclude_sql})
                 GROUP BY f.attendant_name
                 ORDER BY contacts_received DESC;
             """
@@ -1147,7 +1153,7 @@ def dashboard_api(request):
                   COUNT(*) AS total
                 FROM filtered f
                 WHERE f.attendant_name IS NOT NULL
-                  AND LOWER(BTRIM(f.attendant_name)) NOT IN ({sdr_attendant_names_sql})
+                  AND NOT ({sdr_attendant_exclude_sql})
                 GROUP BY f.attendant_name, score
                 ORDER BY f.attendant_name, score;
             """
