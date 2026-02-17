@@ -432,6 +432,7 @@ def dashboard_api(request):
         COALESCE(c.start_time, c.created_at, c.end_time) DESC NULLS LAST,
         c.created_at DESC NULLS LAST
     """
+    messages_union_sql = _messages_union_sql()
     owners_id_col = _owners_view_id_column()
     owners_cte_sql = ""
     owners_join_sql = ""
@@ -878,6 +879,55 @@ def dashboard_api(request):
                     ) AS reason_norm
                   FROM filtered_base fb
                 ),
+                messages_union AS (
+                  {messages_union_sql}
+                ),
+                structured_budget_values AS (
+                  SELECT
+                    src.chat_id,
+                    MAX(src.budget_value) AS budget_value
+                  FROM (
+                    SELECT
+                      f.chat_id,
+                      CASE
+                        WHEN f.budget_value > 0 THEN f.budget_value
+                        ELSE NULL
+                      END AS budget_value
+                    FROM filtered f
+
+                    UNION ALL
+
+                    SELECT
+                      f.chat_id,
+                      CASE
+                        WHEN raw.raw_budget_txt IS NULL THEN NULL
+                        WHEN REPLACE(REGEXP_REPLACE(raw.raw_budget_txt, '[^0-9,.-]', '', 'g'), ',', '.') ~ '^-?[0-9]+(\\.[0-9]+)?$'
+                          THEN REPLACE(REGEXP_REPLACE(raw.raw_budget_txt, '[^0-9,.-]', '', 'g'), ',', '.')::numeric
+                        WHEN REPLACE(REPLACE(REGEXP_REPLACE(raw.raw_budget_txt, '[^0-9,.-]', '', 'g'), '.', ''), ',', '.') ~ '^-?[0-9]+(\\.[0-9]+)?$'
+                          THEN REPLACE(REPLACE(REGEXP_REPLACE(raw.raw_budget_txt, '[^0-9,.-]', '', 'g'), '.', ''), ',', '.')::numeric
+                        ELSE NULL
+                      END AS budget_value
+                    FROM filtered f
+                    JOIN public.semclick_conversations sc
+                      ON sc.chat_id::text = f.chat_id::text
+                    CROSS JOIN LATERAL (
+                      SELECT NULLIF(
+                        BTRIM(
+                          COALESCE(
+                            to_jsonb(sc)->>'valor_orcamento_atual',
+                            to_jsonb(sc)->>'valor_orcamento',
+                            to_jsonb(sc)->>'budget_value',
+                            ''
+                          )
+                        ),
+                        ''
+                      ) AS raw_budget_txt
+                    ) raw
+                  ) src
+                  WHERE src.budget_value IS NOT NULL
+                    AND src.budget_value > 0
+                  GROUP BY src.chat_id
+                ),
                 bot_events AS (
                   SELECT
                     m.chat_id,
@@ -909,22 +959,26 @@ def dashboard_api(request):
                 ),
                 budget_values AS (
                   SELECT
-                    m.chat_id,
+                    mu.chat_id AS chat_id_txt,
                     MAX(
                       NULLIF(
                         REPLACE(REPLACE((matches)[1], '.', ''), ',', '.'),
                         ''
                       )::numeric
                     ) AS max_budget_msg
-                  FROM messages m
-                  JOIN filtered f ON f.chat_id = m.chat_id
+                  FROM messages_union mu
+                  JOIN filtered f ON f.chat_id::text = mu.chat_id
                   JOIN LATERAL regexp_matches(
-                    m.content,
-                    'R\\$\\s*([0-9\\.]+(?:,[0-9]{2})?)',
+                    translate(
+                      lower(COALESCE(mu.msg_conteudo, '')),
+                      'áàâãäéèêëíìîïóòôõöúùûüç',
+                      'aaaaaeeeeiiiiooooouuuuc'
+                    ),
+                    'total\\s*[:\\-]?\\s*r\\$\\s*([0-9\\.]+(?:,[0-9]{2})?)',
                     'g'
                   ) AS matches ON TRUE
-                  WHERE m.content IS NOT NULL
-                  GROUP BY m.chat_id
+                  WHERE mu.msg_conteudo IS NOT NULL
+                  GROUP BY mu.chat_id
                 ),
                 business_duration AS (
                   SELECT
@@ -1011,19 +1065,25 @@ def dashboard_api(request):
                   f.attendant_name AS vendedor,
                   COUNT(*) FILTER (WHERE b.bot_transfer_ts IS NULL) AS contacts_received,
                   COUNT(*) FILTER (
-                    WHERE f.budget_value > 0
+                    WHERE COALESCE(sbv.budget_value, 0) > 0
                       AND NOT (f.reason_norm ~ '{support_reason_pattern}')
                   ) AS budgets_count,
                   COUNT(*) FILTER (
-                    WHERE (f.budget_value > 0 OR bv.max_budget_msg IS NOT NULL)
+                    WHERE (
+                        COALESCE(sbv.budget_value, 0) > 0
+                        OR (
+                          COALESCE(sbv.budget_value, 0) = 0
+                          AND bv.max_budget_msg IS NOT NULL
+                        )
+                      )
                       AND NOT (f.reason_norm ~ '{support_reason_pattern}')
                   ) AS budgets_detected_count,
                   COALESCE(
                     SUM(
                       CASE
-                        WHEN f.budget_value > 0
+                        WHEN COALESCE(sbv.budget_value, 0) > 0
                           AND NOT (f.reason_norm ~ '{support_reason_pattern}')
-                        THEN f.budget_value
+                        THEN sbv.budget_value
                         ELSE 0
                       END
                     ),
@@ -1032,8 +1092,8 @@ def dashboard_api(request):
                   COALESCE(
                     SUM(
                       CASE
-                        WHEN f.budget_value > 0 THEN 0
                         WHEN f.reason_norm ~ '{support_reason_pattern}' THEN 0
+                        WHEN COALESCE(sbv.budget_value, 0) > 0 THEN sbv.budget_value
                         ELSE COALESCE(bv.max_budget_msg, 0)
                       END
                     ),
@@ -1051,7 +1111,8 @@ def dashboard_api(request):
                 FROM filtered f
                 LEFT JOIN bot_events b ON b.chat_id = f.chat_id
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
-                LEFT JOIN budget_values bv ON bv.chat_id = f.chat_id
+                LEFT JOIN structured_budget_values sbv ON sbv.chat_id = f.chat_id
+                LEFT JOIN budget_values bv ON bv.chat_id_txt = f.chat_id::text
                 LEFT JOIN business_duration bd ON bd.chat_id = f.chat_id
                 LEFT JOIN business_handoff bh ON bh.chat_id = f.chat_id
                 WHERE f.attendant_name IS NOT NULL
