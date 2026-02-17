@@ -394,9 +394,8 @@ function AppContent({ onLogout }) {
       const now = new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      const fmt = (d) => d.toISOString().slice(0, 10);
-      params.set("date_from", fmt(monthStart));
-      params.set("date_to", fmt(monthEnd));
+      params.set("date_from", formatDateInput(monthStart));
+      params.set("date_to", formatDateInput(monthEnd));
     }
     if (vendedorFilter && vendedorFilter !== "Todos") {
       params.set("vendedor", vendedorFilter);
@@ -500,6 +499,32 @@ function AppContent({ onLogout }) {
     ).sort((a, b) => a.localeCompare(b));
     return ["Todos", ...values];
   }, [conversations]);
+
+  const periodLabel = useMemo(() => {
+    if (dateFrom && dateTo) return `${dateFrom} até ${dateTo}`;
+    if (dateFrom) return `A partir de ${dateFrom}`;
+    if (dateTo) return `Até ${dateTo}`;
+    return "Mês corrente";
+  }, [dateFrom, dateTo]);
+
+  const activeFilterChips = useMemo(() => {
+    const chips = [`Período: ${periodLabel}`];
+    if (statusFilter !== "Todos") chips.push(`Status: ${statusFilter}`);
+    if (etapaFilter !== "Todos") chips.push(`Etapa: ${etapaFilter}`);
+    if (vendedorFilter !== "Todos") chips.push(`Vendedor: ${vendedorFilter}`);
+    return chips;
+  }, [periodLabel, statusFilter, etapaFilter, vendedorFilter]);
+
+  const clearConversationFilters = () => {
+    setSearch("");
+    setStatusFilter("Todos");
+    setEtapaFilter("Todos");
+    setVendedorFilter("Todos");
+    setDateFrom("");
+    setDateTo("");
+    setMonthFilter(true);
+    setFetchVersion((v) => v + 1);
+  };
 
   useEffect(() => {
     if (filteredConversations.length === 0) {
@@ -870,7 +895,7 @@ function AppContent({ onLogout }) {
               {loading ? "Carregando..." : `${filteredConversations.length} encontradas`}
             </p>
           </div>
-          <span className="pill">{monthFilter ? "Mês corrente" : "Período"}</span>
+          <span className="pill">{periodLabel}</span>
         </div>
 
         {error ? (
@@ -958,14 +983,30 @@ function AppContent({ onLogout }) {
               ))}
             </select>
           </label>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => setFetchVersion((v) => v + 1)}
-          >
-            Aplicar filtros
-          </button>
+          <div className="filter-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={clearConversationFilters}
+            >
+              Limpar
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => setFetchVersion((v) => v + 1)}
+            >
+              Aplicar filtros
+            </button>
+          </div>
         </details>
+        <div className="active-filters">
+          {activeFilterChips.map((chip) => (
+            <span key={chip} className="filter-chip">
+              {chip}
+            </span>
+          ))}
+        </div>
 
         <div className="conversation-list" role="listbox">
           {filteredConversations.length === 0 ? (
@@ -974,29 +1015,30 @@ function AppContent({ onLogout }) {
             filteredConversations
               .slice()
               .sort((a, b) => pickTimestamp(b) - pickTimestamp(a))
-              .map((item) => (
-                <button
-                  key={item.chat_id}
-                  type="button"
-                  className={`conversation-item${
-                    item.chat_id === selectedId ? " is-active" : ""
-                  }`}
-                  onClick={() => setSelectedId(item.chat_id)}
-                >
-                  <div className="conversation-title">
-                    <strong>{item.cliente_nome || item.chat_id}</strong>
-                  </div>
-                  <div className="conversation-meta">
-                    <span>{item.status_normalizado || "--"}</span>
-                    <span>{formatCurrency(item.valor_orcamento)}</span>
-                  </div>
-                  <div className="conversation-preview">
-                    {`${messageContent(item).slice(0, 140)}${
-                      messageContent(item).length > 140 ? "..." : ""
+              .map((item) => {
+                const preview = messageContent(item);
+                return (
+                  <button
+                    key={item.chat_id}
+                    type="button"
+                    className={`conversation-item${
+                      item.chat_id === selectedId ? " is-active" : ""
                     }`}
-                  </div>
-                </button>
-              ))
+                    onClick={() => setSelectedId(item.chat_id)}
+                  >
+                    <div className="conversation-title">
+                      <strong>{item.cliente_nome || item.chat_id}</strong>
+                    </div>
+                    <div className="conversation-meta">
+                      <span>{item.status_normalizado || "--"}</span>
+                      <span>{formatCurrency(item.valor_orcamento)}</span>
+                    </div>
+                    <div className="conversation-preview">
+                      {`${preview.slice(0, 140)}${preview.length > 140 ? "..." : ""}`}
+                    </div>
+                  </button>
+                );
+              })
             )}
           </div>
         </section>
@@ -1024,6 +1066,8 @@ function AppContent({ onLogout }) {
             </p>
           ) : messagesLoading ? (
             <p className="empty">Carregando mensagens...</p>
+          ) : dedupedMessages.length === 0 ? (
+            <p className="empty">Sem mensagens para este chat na base atual.</p>
           ) : (
             dedupedMessages.map((entry, index) => {
               const content = cleanMessageText(messageContent(entry));
