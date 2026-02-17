@@ -200,7 +200,7 @@ BEGIN
       s.source_buffer_id, s.source_payload_hash, s.event_name, s.event_time, s.chat_id, s.message_id, s.payload,
       encode(digest(s.payload::text, 'sha256'), 'hex')
     FROM src s
-    ON CONFLICT (source_buffer_id) DO NOTHING
+    ON CONFLICT DO NOTHING
     RETURNING id, source_buffer_id, event_name, event_time, chat_id, message_id, payload
   )
   SELECT * FROM ins;
@@ -243,7 +243,13 @@ BEGIN
     COALESCE(NULLIF(BTRIM(e.payload #>> '{infos,message,id}'), ''), NULLIF(BTRIM(e.payload #>> '{infos,chat,last_message,id}'), '')),
     e.payload #> '{infos,chat}',
     NOW()
-  FROM tmp_smclick_evt e
+  FROM (
+    SELECT DISTINCT ON (t.chat_id)
+      t.*
+    FROM tmp_smclick_evt t
+    WHERE t.chat_id IS NOT NULL
+    ORDER BY t.chat_id, t.event_time DESC NULLS LAST, t.source_buffer_id DESC
+  ) e
   LEFT JOIN LATERAL (
     SELECT
       NULLIF(BTRIM(seg->>'content'), '') AS content_text,
@@ -371,9 +377,39 @@ BEGIN
     NULLIF(BTRIM(e.payload #>> '{infos,message,fail_reason}'), ''),
     e.payload #> '{infos,message}',
     COALESCE(e.event_time, NOW())
-  FROM tmp_smclick_evt e
-  WHERE e.chat_id IS NOT NULL
-    AND e.payload #> '{infos,message}' IS NOT NULL
+  FROM (
+    SELECT DISTINCT ON (
+      t.chat_id,
+      COALESCE(
+        NULLIF(BTRIM(t.payload #>> '{infos,message,id}'), ''),
+        md5(
+          COALESCE(t.chat_id::text, '')
+          || '|'
+          || COALESCE(t.payload #>> '{infos,message,sent_at}', '')
+          || '|'
+          || COALESCE(t.payload #>> '{infos,message,content,text}', '')
+        )
+      )
+    )
+      t.*
+    FROM tmp_smclick_evt t
+    WHERE t.chat_id IS NOT NULL
+      AND t.payload #> '{infos,message}' IS NOT NULL
+    ORDER BY
+      t.chat_id,
+      COALESCE(
+        NULLIF(BTRIM(t.payload #>> '{infos,message,id}'), ''),
+        md5(
+          COALESCE(t.chat_id::text, '')
+          || '|'
+          || COALESCE(t.payload #>> '{infos,message,sent_at}', '')
+          || '|'
+          || COALESCE(t.payload #>> '{infos,message,content,text}', '')
+        )
+      ),
+      t.event_time DESC NULLS LAST,
+      t.source_buffer_id DESC
+  ) e
   ON CONFLICT (chat_id, message_id) DO UPDATE
   SET
     event_time = COALESCE(EXCLUDED.event_time, public.smclick_message.event_time),
@@ -396,22 +432,39 @@ BEGIN
   )
   SELECT
     e.chat_id,
-    COALESCE(NULLIF(BTRIM(a->>'id'), ''), md5(COALESCE(a->>'email', '') || '|' || COALESCE(a->>'name', ''))),
-    public.smclick_try_uuid(a->>'id'),
-    NULLIF(BTRIM(a->>'name'), ''),
-    NULLIF(BTRIM(a->>'email'), ''),
-    CASE WHEN LOWER(COALESCE(a->>'principal', '')) IN ('true', 't', '1') THEN TRUE ELSE FALSE END,
+    e.attendant_key,
+    e.attendant_id,
+    e.attendant_name,
+    e.attendant_email,
+    e.principal,
     COALESCE(e.event_time, NOW()),
-    a
-  FROM tmp_smclick_evt e
-  CROSS JOIN LATERAL jsonb_array_elements(
-    CASE
-      WHEN jsonb_typeof(COALESCE(e.payload #> '{infos,chat,attendant}', '[]'::jsonb)) = 'array'
-        THEN COALESCE(e.payload #> '{infos,chat,attendant}', '[]'::jsonb)
-      ELSE '[]'::jsonb
-    END
-  ) a
-  WHERE e.chat_id IS NOT NULL
+    e.attendant_raw
+  FROM (
+    SELECT DISTINCT ON (x.chat_id, x.attendant_key)
+      x.*
+    FROM (
+      SELECT
+        t.chat_id,
+        t.event_time,
+        t.source_buffer_id,
+        COALESCE(NULLIF(BTRIM(a->>'id'), ''), md5(COALESCE(a->>'email', '') || '|' || COALESCE(a->>'name', ''))) AS attendant_key,
+        public.smclick_try_uuid(a->>'id') AS attendant_id,
+        NULLIF(BTRIM(a->>'name'), '') AS attendant_name,
+        NULLIF(BTRIM(a->>'email'), '') AS attendant_email,
+        CASE WHEN LOWER(COALESCE(a->>'principal', '')) IN ('true', 't', '1') THEN TRUE ELSE FALSE END AS principal,
+        a AS attendant_raw
+      FROM tmp_smclick_evt t
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE
+          WHEN jsonb_typeof(COALESCE(t.payload #> '{infos,chat,attendant}', '[]'::jsonb)) = 'array'
+            THEN COALESCE(t.payload #> '{infos,chat,attendant}', '[]'::jsonb)
+          ELSE '[]'::jsonb
+        END
+      ) a
+      WHERE t.chat_id IS NOT NULL
+    ) x
+    ORDER BY x.chat_id, x.attendant_key, x.event_time DESC NULLS LAST, x.source_buffer_id DESC
+  ) e
   ON CONFLICT (chat_id, attendant_key) DO UPDATE
   SET
     attendant_id = COALESCE(EXCLUDED.attendant_id, public.smclick_chat_attendant.attendant_id),
@@ -427,23 +480,41 @@ BEGIN
   )
   SELECT
     e.chat_id,
-    COALESCE(NULLIF(BTRIM(s->>'id'), ''), md5(s::text)),
-    NULLIF(BTRIM(s->>'name'), ''),
-    NULLIF(BTRIM(s->>'type'), ''),
-    CASE WHEN NULLIF(BTRIM(s->>'position'), '') ~ '^[0-9]+$' THEN (s->>'position')::int ELSE NULL END,
-    NULLIF(BTRIM(s->>'content'), ''),
-    public.smclick_parse_numeric(s->>'content'),
+    e.field_key,
+    e.field_name,
+    e.field_type,
+    e.field_position,
+    e.content_text,
+    e.content_numeric,
     COALESCE(e.event_time, NOW()),
-    s
-  FROM tmp_smclick_evt e
-  CROSS JOIN LATERAL jsonb_array_elements(
-    CASE
-      WHEN jsonb_typeof(COALESCE(e.payload #> '{infos,chat,contact,segmentation_fields}', '[]'::jsonb)) = 'array'
-        THEN COALESCE(e.payload #> '{infos,chat,contact,segmentation_fields}', '[]'::jsonb)
-      ELSE '[]'::jsonb
-    END
-  ) s
-  WHERE e.chat_id IS NOT NULL
+    e.segment_raw
+  FROM (
+    SELECT DISTINCT ON (x.chat_id, x.field_key)
+      x.*
+    FROM (
+      SELECT
+        t.chat_id,
+        t.event_time,
+        t.source_buffer_id,
+        COALESCE(NULLIF(BTRIM(s->>'id'), ''), md5(s::text)) AS field_key,
+        NULLIF(BTRIM(s->>'name'), '') AS field_name,
+        NULLIF(BTRIM(s->>'type'), '') AS field_type,
+        CASE WHEN NULLIF(BTRIM(s->>'position'), '') ~ '^[0-9]+$' THEN (s->>'position')::int ELSE NULL END AS field_position,
+        NULLIF(BTRIM(s->>'content'), '') AS content_text,
+        public.smclick_parse_numeric(s->>'content') AS content_numeric,
+        s AS segment_raw
+      FROM tmp_smclick_evt t
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE
+          WHEN jsonb_typeof(COALESCE(t.payload #> '{infos,chat,contact,segmentation_fields}', '[]'::jsonb)) = 'array'
+            THEN COALESCE(t.payload #> '{infos,chat,contact,segmentation_fields}', '[]'::jsonb)
+          ELSE '[]'::jsonb
+        END
+      ) s
+      WHERE t.chat_id IS NOT NULL
+    ) x
+    ORDER BY x.chat_id, x.field_key, x.event_time DESC NULLS LAST, x.source_buffer_id DESC
+  ) e
   ON CONFLICT (chat_id, field_key) DO UPDATE
   SET
     field_name = COALESCE(EXCLUDED.field_name, public.smclick_chat_segment.field_name),
