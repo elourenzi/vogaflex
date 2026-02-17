@@ -518,7 +518,9 @@ def dashboard_api(request):
             ) AS day
             WHERE EXTRACT(DOW FROM day) BETWEEN 1 AND 5
           ) d ON TRUE
-          WHERE fc.first_client_ts IS NOT NULL AND f.end_time IS NOT NULL
+          WHERE fc.first_client_ts IS NOT NULL
+            AND f.end_time IS NOT NULL
+            AND LOWER(COALESCE(f.current_funnel_stage, '')) IN ('finalizado', 'finished', 'closed')
           GROUP BY fc.chat_id
         ),
         human_events AS (
@@ -864,6 +866,7 @@ def dashboard_api(request):
             """
 
             support_reason_pattern = "(pos[- ]?venda|duvidas?|sac|rastreio)"
+            budget_outlier_ceiling = 10000000
 
             vendor_summary_query = f"""
                 WITH filtered_base AS (
@@ -926,6 +929,7 @@ def dashboard_api(request):
                   ) src
                   WHERE src.budget_value IS NOT NULL
                     AND src.budget_value > 0
+                    AND src.budget_value <= {budget_outlier_ceiling}
                   GROUP BY src.chat_id
                 ),
                 bot_events AS (
@@ -959,26 +963,32 @@ def dashboard_api(request):
                 ),
                 budget_values AS (
                   SELECT
-                    mu.chat_id AS chat_id_txt,
-                    MAX(
+                    src.chat_id_txt,
+                    MAX(src.msg_budget) AS max_budget_msg
+                  FROM (
+                    SELECT
+                      mu.chat_id AS chat_id_txt,
                       NULLIF(
                         REPLACE(REPLACE((matches)[1], '.', ''), ',', '.'),
                         ''
-                      )::numeric
-                    ) AS max_budget_msg
-                  FROM messages_union mu
-                  JOIN filtered f ON f.chat_id::text = mu.chat_id
-                  JOIN LATERAL regexp_matches(
-                    translate(
-                      lower(COALESCE(mu.msg_conteudo, '')),
-                      'áàâãäéèêëíìîïóòôõöúùûüç',
-                      'aaaaaeeeeiiiiooooouuuuc'
-                    ),
-                    'total\\s*[:\\-]?\\s*r\\$\\s*([0-9\\.]+(?:,[0-9]{2})?)',
-                    'g'
-                  ) AS matches ON TRUE
-                  WHERE mu.msg_conteudo IS NOT NULL
-                  GROUP BY mu.chat_id
+                      )::numeric AS msg_budget
+                    FROM messages_union mu
+                    JOIN filtered f ON f.chat_id::text = mu.chat_id
+                    JOIN LATERAL regexp_matches(
+                      translate(
+                        lower(COALESCE(mu.msg_conteudo, '')),
+                        'áàâãäéèêëíìîïóòôõöúùûüç',
+                        'aaaaaeeeeiiiiooooouuuuc'
+                      ),
+                      'total\\s*[:\\-]?\\s*r\\$\\s*([0-9\\.]+(?:,[0-9]{2})?)',
+                      'g'
+                    ) AS matches ON TRUE
+                    WHERE mu.msg_conteudo IS NOT NULL
+                  ) src
+                  WHERE src.msg_budget IS NOT NULL
+                    AND src.msg_budget > 0
+                    AND src.msg_budget <= {budget_outlier_ceiling}
+                  GROUP BY src.chat_id_txt
                 ),
                 business_duration AS (
                   SELECT
@@ -1007,7 +1017,9 @@ def dashboard_api(request):
                     ) AS day
                     WHERE EXTRACT(DOW FROM day) BETWEEN 1 AND 5
                   ) d ON TRUE
-                  WHERE ms.first_client_ts IS NOT NULL AND f.end_time IS NOT NULL
+                  WHERE ms.first_client_ts IS NOT NULL
+                    AND f.end_time IS NOT NULL
+                    AND LOWER(COALESCE(f.current_funnel_stage, '')) IN ('finalizado', 'finished', 'closed')
                   GROUP BY ms.chat_id
                 ),
                 human_events AS (
