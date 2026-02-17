@@ -1112,7 +1112,7 @@ def dashboard_api(request):
                     0
                   ) AS budgets_sum_detected,
                   COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS dead_contacts,
-                  AVG(bd.business_seconds) AS avg_duration_seconds,
+                  AVG(bd.business_seconds) FILTER (WHERE b.bot_transfer_ts IS NULL) AS avg_duration_seconds,
                   AVG(bh.business_seconds) AS avg_handoff_seconds,
                   AVG(
                     NULLIF(
