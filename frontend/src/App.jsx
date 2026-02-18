@@ -824,12 +824,6 @@ function AppContent({ onLogout }) {
     }
   }, [dashboardVendor, vendorList]);
 
-  useEffect(() => {
-    if (!sdrVendorOptions.includes(sdrVendorFilter)) {
-      setSdrVendorFilter("Todos");
-    }
-  }, [sdrVendorFilter, sdrVendorOptions]);
-
   const sdrSeries = useMemo(() => {
     const map = new Map();
     (sdrData?.daily || []).forEach((entry) => {
@@ -1002,6 +996,12 @@ function AppContent({ onLogout }) {
       .filter(Boolean);
     return ["Todos", ...values];
   }, [stageTimelineData]);
+
+  useEffect(() => {
+    if (!sdrVendorOptions.includes(sdrVendorFilter)) {
+      setSdrVendorFilter("Todos");
+    }
+  }, [sdrVendorFilter, sdrVendorOptions]);
 
   const selectedStageClientsGrouped = useMemo(() => {
     const list = selectedTimelineStage?.clients || [];
