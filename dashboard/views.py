@@ -642,16 +642,31 @@ def dashboard_api(request):
             "(COALESCE(c.start_time, c.created_at) AT TIME ZONE 'America/Sao_Paulo')::date <= %s::date"
         )
         params.append(date_to)
+
+    where_clauses_no_vendor = list(where_clauses)
+    params_no_vendor = list(params)
+
     if vendedor and vendedor != "Todos":
         where_clauses.append("c.attendant_name = %s")
         params.append(vendedor)
 
     where_sql = "WHERE " + " AND ".join(where_clauses)
+    where_sql_no_vendor = "WHERE " + " AND ".join(where_clauses_no_vendor)
     filtered_base_sql = f"""
       SELECT DISTINCT ON (c.chat_id)
         c.*
       FROM conversations c
       {where_sql}
+      ORDER BY
+        c.chat_id,
+        COALESCE(c.start_time, c.created_at, c.end_time) DESC NULLS LAST,
+        c.created_at DESC NULLS LAST
+    """
+    filtered_base_sql_no_vendor = f"""
+      SELECT DISTINCT ON (c.chat_id)
+        c.*
+      FROM conversations c
+      {where_sql_no_vendor}
       ORDER BY
         c.chat_id,
         COALESCE(c.start_time, c.created_at, c.end_time) DESC NULLS LAST,
@@ -886,6 +901,17 @@ def dashboard_api(request):
             contacts_other = max(
                 contacts_total - contacts_finalized - contacts_active - contacts_pending, 0
             )
+            sdr_scope_sql = """
+                (
+                  translate(
+                    lower(COALESCE(f.attendant_name, '')),
+                    'áàâãäéèêëíìîïóòôõöúùûüç',
+                    'aaaaaeeeeiiiiooooouuuuc'
+                  ) ~ '(^|[^a-z])(emill?y|emily)([^a-z]|$)'
+                  OR cl.department_norm ~ '(sdr|pre[- ]?venda|triagem)'
+                  OR cl.owner_norm ~ '(sdr|pre[- ]?venda|triagem)'
+                )
+            """
             sdr_summary_query = f"""
                 WITH filtered AS (
                   {filtered_base_sql}
@@ -906,7 +932,39 @@ def dashboard_api(request):
                       'aaaaaeeeeiiiiooooouuuuc'
                     ) AS stage_norm,
                     {owners_norm_select}
-                    f.attendant_name
+                    f.attendant_name,
+                    COALESCE(
+                      NULLIF(
+                        BTRIM(
+                          COALESCE(
+                            to_jsonb(f)->>'department_name',
+                            to_jsonb(f)->>'department',
+                            ''
+                          )
+                        ),
+                        ''
+                      ),
+                      ''
+                    ) AS department_name,
+                    translate(
+                      lower(
+                        COALESCE(
+                          NULLIF(
+                            BTRIM(
+                              COALESCE(
+                                to_jsonb(f)->>'department_name',
+                                to_jsonb(f)->>'department',
+                                ''
+                              )
+                            ),
+                            ''
+                          ),
+                          ''
+                        )
+                      ),
+                      'áàâãäéèêëíìîïóòôõöúùûüç',
+                      'aaaaaeeeeiiiiooooouuuuc'
+                    ) AS department_norm
                   FROM filtered f
                   {owners_join_sql}
                 ),
@@ -967,7 +1025,8 @@ def dashboard_api(request):
                 FROM filtered f
                 JOIN classified cl ON cl.chat_id = f.chat_id
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
-                LEFT JOIN bot_events b ON b.chat_id = f.chat_id;
+                LEFT JOIN bot_events b ON b.chat_id = f.chat_id
+                WHERE {sdr_scope_sql}
             """
 
             sdr_daily_query = f"""
@@ -990,7 +1049,39 @@ def dashboard_api(request):
                       'aaaaaeeeeiiiiooooouuuuc'
                     ) AS stage_norm,
                     {owners_norm_select}
-                    f.attendant_name
+                    f.attendant_name,
+                    COALESCE(
+                      NULLIF(
+                        BTRIM(
+                          COALESCE(
+                            to_jsonb(f)->>'department_name',
+                            to_jsonb(f)->>'department',
+                            ''
+                          )
+                        ),
+                        ''
+                      ),
+                      ''
+                    ) AS department_name,
+                    translate(
+                      lower(
+                        COALESCE(
+                          NULLIF(
+                            BTRIM(
+                              COALESCE(
+                                to_jsonb(f)->>'department_name',
+                                to_jsonb(f)->>'department',
+                                ''
+                              )
+                            ),
+                            ''
+                          ),
+                          ''
+                        )
+                      ),
+                      'áàâãäéèêëíìîïóòôõöúùûüç',
+                      'aaaaaeeeeiiiiooooouuuuc'
+                    ) AS department_norm
                   FROM filtered f
                   {owners_join_sql}
                 ),
@@ -1051,6 +1142,7 @@ def dashboard_api(request):
                 JOIN classified cl ON cl.chat_id = f.chat_id
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
                 LEFT JOIN bot_events b ON b.chat_id = f.chat_id
+                WHERE {sdr_scope_sql}
                 GROUP BY day
                 ORDER BY day;
             """
@@ -1058,6 +1150,34 @@ def dashboard_api(request):
             sdr_transferred_daily_query = f"""
                 WITH filtered AS (
                   {filtered_base_sql}
+                )
+                {owners_cte_sql}
+                ,
+                classified AS (
+                  SELECT
+                    f.chat_id,
+                    {owners_norm_select}
+                    translate(
+                      lower(
+                        COALESCE(
+                          NULLIF(
+                            BTRIM(
+                              COALESCE(
+                                to_jsonb(f)->>'department_name',
+                                to_jsonb(f)->>'department',
+                                ''
+                              )
+                            ),
+                            ''
+                          ),
+                          ''
+                        )
+                      ),
+                      'áàâãäéèêëíìîïóòôõöúùûüç',
+                      'aaaaaeeeeiiiiooooouuuuc'
+                    ) AS department_norm
+                  FROM filtered f
+                  {owners_join_sql}
                 ),
                 bot_events AS (
                   SELECT
@@ -1084,18 +1204,79 @@ def dashboard_api(request):
                   COUNT(*) AS transferred
                 FROM bot_events b
                 JOIN filtered f ON f.chat_id = b.chat_id
+                JOIN classified cl ON cl.chat_id = b.chat_id
+                WHERE {sdr_scope_sql}
                 GROUP BY day
                 ORDER BY day;
+            """
+
+            sdr_members_query = f"""
+                WITH filtered AS (
+                  {filtered_base_sql_no_vendor}
+                )
+                SELECT
+                  f.attendant_name AS nome,
+                  COALESCE(
+                    MAX(
+                      NULLIF(
+                        BTRIM(
+                          COALESCE(
+                            to_jsonb(f)->>'department_name',
+                            to_jsonb(f)->>'department',
+                            ''
+                          )
+                        ),
+                        ''
+                      )
+                    ),
+                    '--'
+                  ) AS departamento,
+                  COUNT(*) AS total_contacts
+                FROM filtered f
+                WHERE f.attendant_name IS NOT NULL
+                  AND (
+                    translate(
+                      lower(COALESCE(f.attendant_name, '')),
+                      'áàâãäéèêëíìîïóòôõöúùûüç',
+                      'aaaaaeeeeiiiiooooouuuuc'
+                    ) ~ '(^|[^a-z])(emill?y|emily)([^a-z]|$)'
+                    OR translate(
+                      lower(
+                        COALESCE(
+                          to_jsonb(f)->>'department_name',
+                          to_jsonb(f)->>'department',
+                          ''
+                        )
+                      ),
+                      'áàâãäéèêëíìîïóòôõöúùûüç',
+                      'aaaaaeeeeiiiiooooouuuuc'
+                    ) ~ '(sdr|pre[- ]?venda|triagem)'
+                  )
+                GROUP BY f.attendant_name
+                ORDER BY total_contacts DESC, f.attendant_name;
             """
 
             support_reason_pattern = "(pos[- ]?venda|duvidas?|sac|rastreio)"
             budget_outlier_ceiling = 10000000
             sdr_attendant_exclude_sql = """
-              translate(
-                lower(BTRIM(f.attendant_name)),
-                'áàâãäéèêëíìîïóòôõöúùûüç',
-                'aaaaaeeeeiiiiooooouuuuc'
-              ) ~ '(^|[^a-z])emill?y([^a-z]|$)'
+              (
+                translate(
+                  lower(COALESCE(f.attendant_name, '')),
+                  'áàâãäéèêëíìîïóòôõöúùûüç',
+                  'aaaaaeeeeiiiiooooouuuuc'
+                ) ~ '(^|[^a-z])(emill?y|emily)([^a-z]|$)'
+                OR translate(
+                  lower(
+                    COALESCE(
+                      to_jsonb(f)->>'department_name',
+                      to_jsonb(f)->>'department',
+                      ''
+                    )
+                  ),
+                  'áàâãäéèêëíìîïóòôõöúùûüç',
+                  'aaaaaeeeeiiiiooooouuuuc'
+                ) ~ '(sdr|pre[- ]?venda|triagem)'
+              )
             """
 
             vendor_summary_query = f"""
@@ -1420,6 +1601,17 @@ def dashboard_api(request):
                 for row in transferred_rows
             ]
 
+            cursor.execute(sdr_members_query, params_no_vendor)
+            sdr_member_rows = cursor.fetchall()
+            sdr_members = [
+                {
+                    "nome": row[0],
+                    "departamento": row[1] or "--",
+                    "total_contacts": row[2] or 0,
+                }
+                for row in sdr_member_rows
+            ]
+
             cursor.execute(vendor_summary_query, params)
             vendor_rows = cursor.fetchall()
             vendors = [
@@ -1462,6 +1654,7 @@ def dashboard_api(request):
                     "summary": sdr_summary,
                     "daily": sdr_daily,
                     "transferred_daily": sdr_transferred_daily,
+                    "members": sdr_members,
                 },
                 "vendors": {
                     "summary": vendors,

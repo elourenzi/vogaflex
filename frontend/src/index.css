@@ -209,6 +209,20 @@ input {
   font-weight: 600;
 }
 
+.dashboard-subitem-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.dashboard-subitem-dept {
+  color: var(--muted);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dashboard-subitem-meta {
   color: var(--muted);
   font-size: 0.75rem;

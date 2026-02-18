@@ -428,6 +428,7 @@ function AppContent({ onLogout }) {
   const [dashboardTab, setDashboardTab] = useState("sdr");
   const [dashboardRange, setDashboardRange] = useState("month");
   const [dashboardVendor, setDashboardVendor] = useState("");
+  const [dashboardSdrMember, setDashboardSdrMember] = useState("");
   const [dashboardFetchVersion, setDashboardFetchVersion] = useState(0);
   const [vendorBreakdownOpen, setVendorBreakdownOpen] = useState(false);
   const [vendorBreakdown, setVendorBreakdown] = useState(null);
@@ -711,7 +712,12 @@ function AppContent({ onLogout }) {
       return () => {};
     }
     setDashboardLoading(true);
-    fetch(`/api/dashboard/?${buildDashboardParams()}`)
+    const dashboardParams = buildDashboardParams(
+      dashboardTab === "sdr" && dashboardSdrMember
+        ? { vendedor: dashboardSdrMember }
+        : {}
+    );
+    fetch(`/api/dashboard/?${dashboardParams}`)
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         if (!active) return;
@@ -730,7 +736,7 @@ function AppContent({ onLogout }) {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, dashboardTab, dashboardFetchVersion]);
+  }, [activeView, dashboardTab, dashboardSdrMember, dashboardFetchVersion]);
 
   useEffect(() => {
     let active = true;
@@ -800,6 +806,17 @@ function AppContent({ onLogout }) {
   const dashboardStats = dashboardData?.stats;
   const sdrData = dashboardData?.sdr;
   const vendorData = dashboardData?.vendors;
+  const sdrMemberList = useMemo(
+    () =>
+      (sdrData?.members || EMPTY_LIST)
+        .filter((item) => item?.nome)
+        .map((item) => ({
+          nome: item.nome,
+          departamento: item.departamento || "--",
+          total_contacts: Number(item.total_contacts) || 0,
+        })),
+    [sdrData]
+  );
   const vendorList = useMemo(
     () =>
       (vendorData?.summary || EMPTY_LIST).filter(
@@ -807,6 +824,20 @@ function AppContent({ onLogout }) {
       ),
     [vendorData]
   );
+
+  useEffect(() => {
+    if (dashboardTab !== "sdr") return;
+    if (sdrMemberList.length === 0) {
+      if (dashboardSdrMember) setDashboardSdrMember("");
+      return;
+    }
+    const exists = sdrMemberList.some(
+      (item) => item.nome === dashboardSdrMember
+    );
+    if (!dashboardSdrMember || !exists) {
+      setDashboardSdrMember(sdrMemberList[0].nome);
+    }
+  }, [dashboardTab, dashboardSdrMember, sdrMemberList]);
 
   useEffect(() => {
     if (vendorList.length === 0) return;
@@ -849,6 +880,8 @@ function AppContent({ onLogout }) {
   }, [sdrData]);
 
   const sdrSummary = sdrData?.summary || {};
+  const selectedSdrMember =
+    sdrMemberList.find((item) => item.nome === dashboardSdrMember) || null;
   const sdrTotal = sdrSummary.contacts || 0;
   const sdrFunnel = [
     {
@@ -1466,6 +1499,34 @@ function AppContent({ onLogout }) {
               >
                 Vendedores
               </button>
+              {dashboardTab === "sdr" ? (
+                <div className="dashboard-submenu">
+                  {sdrMemberList.length === 0 ? (
+                    <p className="dashboard-submenu-empty">Sem SDR no período.</p>
+                  ) : (
+                    sdrMemberList.map((member) => (
+                      <button
+                        key={member.nome}
+                        type="button"
+                        className={`dashboard-subitem${
+                          dashboardSdrMember === member.nome ? " is-active" : ""
+                        }`}
+                        onClick={() => setDashboardSdrMember(member.nome)}
+                      >
+                        <span className="dashboard-subitem-main">
+                          <span className="dashboard-subitem-name">{member.nome}</span>
+                          <span className="dashboard-subitem-dept">
+                            {member.departamento}
+                          </span>
+                        </span>
+                        <span className="dashboard-subitem-meta">
+                          {formatCount(member.total_contacts)}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : null}
               {dashboardTab === "vendors" ? (
                 <div className="dashboard-submenu">
                   {vendorList.length === 0 ? (
@@ -1553,9 +1614,15 @@ function AppContent({ onLogout }) {
                     <>
                       <div className="dashboard-section">
                         <div className="section-head">
-                          <h3>Resumo SDR</h3>
+                          <h3>
+                            Resumo SDR
+                            {selectedSdrMember ? ` · ${selectedSdrMember.nome}` : ""}
+                          </h3>
                           <p className="muted">
-                            Leitura do funil de contatos líquidos (sem transferidos).
+                            {selectedSdrMember
+                              ? `Departamento: ${selectedSdrMember.departamento}. `
+                              : ""}
+                            Métricas de pré-vendas por atendente SDR.
                           </p>
                         </div>
                         <div className="funnel-grid">
