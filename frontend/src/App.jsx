@@ -213,6 +213,19 @@ const STATUS_OPTIONS = [
   "Finalizado",
 ];
 
+const STAGE_TIMELINE_ORDER = [
+  { key: "aguardando", label: "Aguardando" },
+  { key: "triagem", label: "Triagem" },
+  { key: "em_atendimento", label: "Em atendimento" },
+  { key: "ativo", label: "Ativo" },
+  { key: "chamada_1", label: "1ª chamada" },
+  { key: "chamada_2", label: "2ª chamada" },
+  { key: "chamada_3", label: "3ª chamada" },
+  { key: "proposta_enviada", label: "Proposta enviada" },
+  { key: "pos_vendas", label: "Pós-vendas" },
+  { key: "lixo", label: "Lixo" },
+];
+
 const EMPTY_LIST = Object.freeze([]);
 const EMPTY_MAP = Object.freeze({});
 
@@ -420,6 +433,12 @@ function AppContent({ onLogout }) {
   const [vendorBreakdownOpen, setVendorBreakdownOpen] = useState(false);
   const [vendorBreakdown, setVendorBreakdown] = useState(null);
   const [vendorBreakdownLoading, setVendorBreakdownLoading] = useState(false);
+  const [stageTimelineLoading, setStageTimelineLoading] = useState(false);
+  const [stageTimelineData, setStageTimelineData] = useState(null);
+  const [selectedStageKey, setSelectedStageKey] = useState("aguardando");
+  const [stageClientModal, setStageClientModal] = useState(null);
+  const [stageClientMessages, setStageClientMessages] = useState([]);
+  const [stageClientMessagesLoading, setStageClientMessagesLoading] = useState(false);
 
   const loadConversations = async () => {
     const params = new URLSearchParams();
@@ -716,6 +735,37 @@ function AppContent({ onLogout }) {
 
   useEffect(() => {
     let active = true;
+    if (activeView !== "dashboard" || dashboardTab !== "sdr") {
+      return () => {};
+    }
+    if (!dashboardDateFrom && !dashboardDateTo) {
+      return () => {};
+    }
+    setStageTimelineLoading(true);
+    fetch(`/api/dashboard/stages/?${buildDashboardParams()}`)
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!active) return;
+        if (!ok) throw new Error(data.error || "Erro ao carregar etapas do SDR");
+        setStageTimelineData(data);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err.message || "Erro desconhecido");
+        setStageTimelineData(null);
+      })
+      .finally(() => {
+        if (!active) return;
+        setStageTimelineLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, dashboardTab, dashboardFetchVersion]);
+
+  useEffect(() => {
+    let active = true;
     if (activeView !== "dashboard" || dashboardTab !== "vendors") {
       return () => {};
     }
@@ -877,6 +927,108 @@ function AppContent({ onLogout }) {
       total: Number(stage.total) || 0,
     }))
     .sort((a, b) => b.total - a.total);
+
+  const stageTimelineStages = useMemo(() => {
+    const source = stageTimelineData?.stages || [];
+    const map = new Map(
+      source.map((stage) => [
+        String(stage?.key || ""),
+        {
+          key: String(stage?.key || ""),
+          label: String(stage?.label || ""),
+          total: Number(stage?.total) || 0,
+          clients: Array.isArray(stage?.clients) ? stage.clients : [],
+        },
+      ])
+    );
+    return STAGE_TIMELINE_ORDER.map((item) => {
+      const current = map.get(item.key);
+      return (
+        current || {
+          key: item.key,
+          label: item.label,
+          total: 0,
+          clients: [],
+        }
+      );
+    });
+  }, [stageTimelineData]);
+
+  const stageTimelineMax = useMemo(
+    () => Math.max(...stageTimelineStages.map((stage) => stage.total), 1),
+    [stageTimelineStages]
+  );
+
+  useEffect(() => {
+    const hasSelected = stageTimelineStages.some(
+      (stage) => stage.key === selectedStageKey
+    );
+    if (hasSelected) return;
+    const firstWithData =
+      stageTimelineStages.find((stage) => stage.total > 0) || stageTimelineStages[0];
+    if (firstWithData) {
+      setSelectedStageKey(firstWithData.key);
+    }
+  }, [selectedStageKey, stageTimelineStages]);
+
+  const selectedTimelineStage =
+    stageTimelineStages.find((stage) => stage.key === selectedStageKey) ||
+    stageTimelineStages[0] ||
+    null;
+
+  const stageTimelineTotalClassified = stageTimelineStages.reduce(
+    (acc, stage) => acc + (stage.total || 0),
+    0
+  );
+
+  const stageClientDedupedMessages = useMemo(() => {
+    const seen = new Set();
+    return stageClientMessages.filter((entry) => {
+      const signature = [
+        entry.chat_id || stageClientModal?.chat_id || "",
+        entry.evento_timestamp || "",
+        entry.msg_from_client === true ? "1" : "0",
+        normalizeText(entry.msg_tipo),
+        cleanMessageText(messageContent(entry)),
+      ].join("|");
+      if (seen.has(signature)) return false;
+      seen.add(signature);
+      return true;
+    });
+  }, [stageClientMessages, stageClientModal]);
+
+  useEffect(() => {
+    let active = true;
+    if (!stageClientModal?.chat_id) {
+      setStageClientMessages([]);
+      return () => {};
+    }
+    setStageClientMessagesLoading(true);
+    fetch(
+      `/api/messages/?chat_id=${encodeURIComponent(
+        stageClientModal.chat_id
+      )}&limit=2000`
+    )
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!active) return;
+        if (!ok) throw new Error(data.error || "Erro ao carregar histórico");
+        setStageClientMessages(data.messages || []);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err.message || "Erro desconhecido");
+        setStageClientMessages([]);
+      })
+      .finally(() => {
+        if (!active) return;
+        setStageClientMessagesLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [stageClientModal]);
 
   return (
     <div className="app-shell">
@@ -1389,8 +1541,82 @@ function AppContent({ onLogout }) {
                     <>
                       <div className="dashboard-section">
                         <div className="section-head">
+                          <h3>Timeline por etapa (estratificação)</h3>
+                          <p className="muted">
+                            Clique na barra para listar clientes e abrir histórico da conversa.
+                          </p>
+                        </div>
+                        <div className="stage-timeline-grid">
+                          {stageTimelineStages.map((stage) => {
+                            const height = Math.max(
+                              8,
+                              Math.round((stage.total / stageTimelineMax) * 100)
+                            );
+                            const isActive = selectedTimelineStage?.key === stage.key;
+                            return (
+                              <button
+                                key={stage.key}
+                                type="button"
+                                className={`stage-timeline-item${
+                                  isActive ? " is-active" : ""
+                                }`}
+                                onClick={() => setSelectedStageKey(stage.key)}
+                              >
+                                <span className="stage-timeline-count">
+                                  {formatCount(stage.total)}
+                                </span>
+                                <span className="stage-timeline-track">
+                                  <span
+                                    className="stage-timeline-bar"
+                                    style={{ height: `${height}%` }}
+                                  />
+                                </span>
+                                <span className="stage-timeline-label">{stage.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="stage-clients-card">
+                          <div className="stage-clients-head">
+                            <h4>
+                              {selectedTimelineStage?.label || "Etapa"} ·{" "}
+                              {formatCount(selectedTimelineStage?.total || 0)}
+                            </h4>
+                            <p className="muted">
+                              Base classificada: {formatCount(stageTimelineTotalClassified)}
+                            </p>
+                          </div>
+                          {stageTimelineLoading ? (
+                            <p className="empty">Carregando estratificação...</p>
+                          ) : selectedTimelineStage?.clients?.length ? (
+                            <div className="stage-clients-list">
+                              {selectedTimelineStage.clients.map((client) => (
+                                <button
+                                  key={`${selectedTimelineStage.key}-${client.chat_id}`}
+                                  type="button"
+                                  className="stage-client-item"
+                                  onClick={() => setStageClientModal(client)}
+                                >
+                                  <strong>{client.cliente_nome || client.chat_id}</strong>
+                                  <span>
+                                    {(client.cliente_telefone || "--") +
+                                      " · " +
+                                      (client.vendedor_nome || "--")}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="empty">Nenhum cliente nesta etapa.</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="dashboard-section">
+                        <div className="section-head">
                           <h3>Resumo SDR</h3>
-                          <p className="muted">Leitura do funil de contatos líquidos (sem transferidos).</p>
+                          <p className="muted">
+                            Leitura do funil de contatos líquidos (sem transferidos).
+                          </p>
                         </div>
                         <div className="funnel-grid">
                           {sdrFunnel.map((item) => (
@@ -1656,6 +1882,90 @@ function AppContent({ onLogout }) {
             </div>
           </div>
         </section>
+      )}
+      {stageClientModal && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setStageClientModal(null)}
+        >
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <p className="stat-label">Histórico da conversa</p>
+                <p className="stat-foot">
+                  {(stageClientModal.cliente_nome || stageClientModal.chat_id) +
+                    " · " +
+                    (stageClientModal.cliente_telefone || "--")}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setStageClientModal(null)}
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="chat-window chat-window-modal" role="log">
+              {stageClientMessagesLoading ? (
+                <p className="empty">Carregando mensagens...</p>
+              ) : stageClientDedupedMessages.length === 0 ? (
+                <p className="empty">Sem mensagens para este chat na base atual.</p>
+              ) : (
+                stageClientDedupedMessages.map((entry, index) => {
+                  const content = cleanMessageText(messageContent(entry));
+                  const { name: vendorName, content: cleanedContent } =
+                    splitVendorNameFromContent(content);
+                  const fromClient = entry.msg_from_client === true;
+                  const bot = isBotContent(entry, content) || (!fromClient && !vendorName);
+                  const sender = {
+                    name: bot
+                      ? "Bot"
+                      : fromClient
+                      ? stageClientModal.cliente_nome || "Cliente"
+                      : vendorName || stageClientModal.vendedor_nome || "Vendedor",
+                    role: fromClient ? "client" : "vendor",
+                    content: fromClient ? content : vendorName ? cleanedContent : content,
+                  };
+                  const statusText = String(entry.msg_status_envio || "").trim();
+                  const showStatus = statusText && statusText.toLowerCase() !== "true";
+
+                  return (
+                    <div
+                      key={entry.id || `${stageClientModal.chat_id}-${index}`}
+                      className={`message-row${
+                        sender.role === "vendor" ? " is-outgoing" : ""
+                      }`}
+                    >
+                      <article
+                        className={`message-bubble${
+                          sender.role === "vendor" ? " is-outgoing" : ""
+                        }`}
+                      >
+                        <div className="message-meta">
+                          <span>
+                            {sender.name}
+                            {bot ? " · BOT" : ""}
+                          </span>
+                        </div>
+                        <p className="message-text">{sender.content}</p>
+                        {showStatus ? (
+                          <div className="message-status">{statusText}</div>
+                        ) : null}
+                      </article>
+                      <span className="message-time">
+                        {formatTime(entry.evento_timestamp)}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
       )}
       {vendorBreakdownOpen && (
         <div

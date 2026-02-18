@@ -428,6 +428,126 @@ button.funnel-step {
   box-shadow: var(--shadow-soft);
 }
 
+.stage-timeline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.stage-timeline-item {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 10px 8px;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  cursor: pointer;
+  min-height: 220px;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.stage-timeline-item:hover {
+  border-color: rgba(200, 38, 80, 0.4);
+  transform: translateY(-2px);
+}
+
+.stage-timeline-item.is-active {
+  border-color: rgba(200, 38, 80, 0.5);
+  background: rgba(200, 38, 80, 0.06);
+}
+
+.stage-timeline-count {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent-2);
+}
+
+.stage-timeline-track {
+  width: 34px;
+  height: 140px;
+  border-radius: 999px;
+  background: #eceef1;
+  border: 1px solid rgba(47, 48, 61, 0.1);
+  display: flex;
+  align-items: flex-end;
+  padding: 3px;
+}
+
+.stage-timeline-bar {
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #c82650 0%, #8f1839 100%);
+  min-height: 8px;
+}
+
+.stage-timeline-label {
+  font-size: 0.8rem;
+  line-height: 1.2;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+  min-height: 32px;
+  display: grid;
+  align-content: center;
+}
+
+.stage-clients-card {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+  background: #ffffff;
+  display: grid;
+  gap: 10px;
+}
+
+.stage-clients-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stage-clients-head h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.stage-clients-list {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.stage-client-item {
+  border: 1px solid rgba(47, 48, 61, 0.12);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #f7f8fa;
+  cursor: pointer;
+  text-align: left;
+  display: grid;
+  gap: 2px;
+}
+
+.stage-client-item:hover {
+  border-color: rgba(200, 38, 80, 0.4);
+  background: rgba(200, 38, 80, 0.06);
+}
+
+.stage-client-item strong {
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+
+.stage-client-item span {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 .mini-chart {
   height: 72px;
   display: flex;
@@ -911,6 +1031,10 @@ h3 {
   background: #f7f8fa;
   display: grid;
   gap: 12px;
+}
+
+.chat-window-modal {
+  max-height: min(60vh, 560px);
 }
 
 .message-bubble {

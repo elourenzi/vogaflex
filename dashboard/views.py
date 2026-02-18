@@ -3,6 +3,19 @@ from django.db import connection
 from django.http import JsonResponse
 from django.shortcuts import render
 
+STAGE_STRATIFICATION_ORDER = [
+    ("aguardando", "Aguardando"),
+    ("triagem", "Triagem"),
+    ("em_atendimento", "Em atendimento"),
+    ("ativo", "Ativo"),
+    ("chamada_1", "1ª chamada"),
+    ("chamada_2", "2ª chamada"),
+    ("chamada_3", "3ª chamada"),
+    ("proposta_enviada", "Proposta enviada"),
+    ("pos_vendas", "Pós-vendas"),
+    ("lixo", "Lixo"),
+]
+
 
 MSG_FROM_CLIENT_SQL = """
 CASE
@@ -378,6 +391,191 @@ def messages_api(request):
             columns = [col[0] for col in cursor.description]
             rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
         return JsonResponse({"messages": rows})
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+
+def dashboard_stage_stratification_api(request):
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
+    vendedor = request.GET.get("vendedor")
+    clients_limit_raw = request.GET.get("clients_limit", "300")
+
+    try:
+        clients_limit = max(1, min(int(clients_limit_raw), 1000))
+    except (TypeError, ValueError):
+        clients_limit = 300
+
+    where_clauses = []
+    params = []
+    if date_from:
+        where_clauses.append(
+            "(COALESCE(c.created_ts, c.updated_ts) AT TIME ZONE 'America/Sao_Paulo')::date >= %s::date"
+        )
+        params.append(date_from)
+    if date_to:
+        where_clauses.append(
+            "(COALESCE(c.created_ts, c.updated_ts) AT TIME ZONE 'America/Sao_Paulo')::date <= %s::date"
+        )
+        params.append(date_to)
+    if vendedor and vendedor != "Todos":
+        where_clauses.append("c.vendedor_nome = %s")
+        params.append(vendedor)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    query = f"""
+        WITH conv_sources AS (
+          SELECT
+            1 AS source_priority,
+            sc.chat_id::text AS chat_id,
+            to_jsonb(sc) AS j
+          FROM semclick_conversations sc
+          WHERE sc.chat_id IS NOT NULL
+
+          UNION ALL
+
+          SELECT
+            2 AS source_priority,
+            c.chat_id::text AS chat_id,
+            to_jsonb(c) AS j
+          FROM conversations c
+          WHERE c.chat_id IS NOT NULL
+        ),
+        conv AS (
+          SELECT DISTINCT ON (src.chat_id)
+            src.chat_id,
+            NULLIF(BTRIM(COALESCE(src.j->>'cliente_nome', src.j->>'customer_name', src.j->>'contact_name', src.j#>>'{{contact,name}}', src.j#>>'{{infos,chat,contact,name}}', '')), '') AS cliente_nome,
+            NULLIF(BTRIM(COALESCE(src.j->>'cliente_telefone', src.j->>'customer_phone', src.j->>'contact_phone', src.j#>>'{{contact,telephone}}', src.j#>>'{{infos,chat,contact,telephone}}', '')), '') AS cliente_telefone,
+            NULLIF(BTRIM(COALESCE(src.j->>'vendedor_nome', src.j->>'attendant_name', src.j->>'current_attendant_name', src.j#>>'{{infos,message,sent_by,name}}', '')), '') AS vendedor_nome,
+            NULLIF(BTRIM(COALESCE(src.j->>'etapa_funil_atual', src.j->>'etapa_funil', src.j->>'funnel_stage', src.j->>'current_funnel_stage', src.j->>'coluna_kanban', src.j->>'kanban_column', src.j#>>'{{infos,chat,crm_column,name}}', '')), '') AS stage_raw,
+            CASE
+              WHEN NULLIF(BTRIM(COALESCE(src.j->>'updated_at', src.j->>'ultima_atualizacao', src.j->>'evento_timestamp', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,updated_at}}', '')), '') ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}'
+                THEN NULLIF(BTRIM(COALESCE(src.j->>'updated_at', src.j->>'ultima_atualizacao', src.j->>'evento_timestamp', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,updated_at}}', '')), '')::timestamptz
+              ELSE NULL
+            END AS updated_ts,
+            CASE
+              WHEN NULLIF(BTRIM(COALESCE(src.j->>'data_criacao_chat', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,created_at}}', '')), '') ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}'
+                THEN NULLIF(BTRIM(COALESCE(src.j->>'data_criacao_chat', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,created_at}}', '')), '')::timestamptz
+              ELSE NULL
+            END AS created_ts
+          FROM conv_sources src
+          ORDER BY
+            src.chat_id,
+            CASE
+              WHEN NULLIF(BTRIM(COALESCE(src.j->>'updated_at', src.j->>'ultima_atualizacao', src.j->>'evento_timestamp', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,updated_at}}', '')), '') ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}'
+                THEN NULLIF(BTRIM(COALESCE(src.j->>'updated_at', src.j->>'ultima_atualizacao', src.j->>'evento_timestamp', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,updated_at}}', '')), '')::timestamptz
+              ELSE NULL
+            END DESC NULLS LAST,
+            src.source_priority ASC
+        ),
+        filtered AS (
+          SELECT *
+          FROM conv c
+          {where_sql}
+        ),
+        classified AS (
+          SELECT
+            f.chat_id,
+            f.cliente_nome,
+            f.cliente_telefone,
+            f.vendedor_nome,
+            f.stage_raw,
+            f.created_ts,
+            f.updated_ts,
+            CASE
+              WHEN stage_norm IN ('waiting', 'em espera', 'aguardando') THEN 'aguardando'
+              WHEN stage_norm IN ('screening', 'triagem') THEN 'triagem'
+              WHEN stage_norm IN ('em atendimento') THEN 'em_atendimento'
+              WHEN stage_norm IN ('active', 'ativo') THEN 'ativo'
+              WHEN stage_norm ~ '^1[aª]? ?chamada$' THEN 'chamada_1'
+              WHEN stage_norm ~ '^2[aª]? ?chamada$' THEN 'chamada_2'
+              WHEN stage_norm ~ '^3[aª]? ?chamada$' THEN 'chamada_3'
+              WHEN stage_norm IN ('proposta enviada') THEN 'proposta_enviada'
+              WHEN stage_norm IN ('pos-vendas', 'pos vendas', 'posvendas', 'pos-venda', 'pos venda') THEN 'pos_vendas'
+              WHEN stage_norm IN ('lixo') THEN 'lixo'
+              ELSE NULL
+            END AS stage_key,
+            CASE
+              WHEN stage_norm IN ('waiting', 'em espera', 'aguardando') THEN 1
+              WHEN stage_norm IN ('screening', 'triagem') THEN 2
+              WHEN stage_norm IN ('em atendimento') THEN 3
+              WHEN stage_norm IN ('active', 'ativo') THEN 4
+              WHEN stage_norm ~ '^1[aª]? ?chamada$' THEN 5
+              WHEN stage_norm ~ '^2[aª]? ?chamada$' THEN 6
+              WHEN stage_norm ~ '^3[aª]? ?chamada$' THEN 7
+              WHEN stage_norm IN ('proposta enviada') THEN 8
+              WHEN stage_norm IN ('pos-vendas', 'pos vendas', 'posvendas', 'pos-venda', 'pos venda') THEN 9
+              WHEN stage_norm IN ('lixo') THEN 10
+              ELSE NULL
+            END AS stage_order
+          FROM (
+            SELECT
+              f.*,
+              translate(
+                lower(BTRIM(COALESCE(f.stage_raw, ''))),
+                'áàâãäéèêëíìîïóòôõöúùûüç',
+                'aaaaaeeeeiiiiooooouuuuc'
+              ) AS stage_norm
+            FROM filtered f
+          ) f
+        )
+        SELECT
+          c.stage_key,
+          c.stage_order,
+          c.chat_id,
+          c.cliente_nome,
+          c.cliente_telefone,
+          c.vendedor_nome,
+          c.stage_raw,
+          c.created_ts,
+          c.updated_ts
+        FROM classified c
+        WHERE c.stage_key IS NOT NULL
+        ORDER BY c.stage_order ASC, c.updated_ts DESC NULLS LAST, c.created_ts DESC NULLS LAST;
+    """
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(query, params)
+            columns = [col[0] for col in cursor.description]
+            rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        stage_map = {
+            key: {"key": key, "label": label, "total": 0, "clients": []}
+            for key, label in STAGE_STRATIFICATION_ORDER
+        }
+
+        for row in rows:
+            stage_key = row.get("stage_key")
+            bucket = stage_map.get(stage_key)
+            if not bucket:
+                continue
+            bucket["total"] += 1
+            if len(bucket["clients"]) < clients_limit:
+                bucket["clients"].append(
+                    {
+                        "chat_id": row.get("chat_id"),
+                        "cliente_nome": row.get("cliente_nome") or row.get("chat_id"),
+                        "cliente_telefone": row.get("cliente_telefone"),
+                        "vendedor_nome": row.get("vendedor_nome"),
+                        "stage_raw": row.get("stage_raw"),
+                        "updated_at": row.get("updated_ts"),
+                        "created_at": row.get("created_ts"),
+                    }
+                )
+
+        stages = [stage_map[key] for key, _ in STAGE_STRATIFICATION_ORDER]
+        total_classified = sum(item["total"] for item in stages)
+        return JsonResponse(
+            {
+                "stages": stages,
+                "total_classified": total_classified,
+                "clients_limit": clients_limit,
+            }
+        )
     except Exception as exc:
         return JsonResponse({"error": str(exc)}, status=500)
 
