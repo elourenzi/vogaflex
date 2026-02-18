@@ -264,6 +264,20 @@ input {
   gap: 12px;
 }
 
+.stage-section-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stage-vendor-filter {
+  min-width: 220px;
+}
+
+.stage-vendor-filter span {
+  font-size: 0.72rem;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -493,6 +507,14 @@ button.funnel-step {
   align-content: center;
 }
 
+.stage-timeline-vendors {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.3;
+  min-height: 28px;
+}
+
 .stage-clients-card {
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -520,6 +542,37 @@ button.funnel-step {
   max-height: 280px;
   overflow: auto;
   padding-right: 4px;
+}
+
+.stage-vendor-group {
+  border: 1px solid rgba(47, 48, 61, 0.1);
+  border-radius: 12px;
+  background: #fbfbfc;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.stage-vendor-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.stage-vendor-group-head strong {
+  font-size: 0.85rem;
+}
+
+.stage-vendor-group-head span {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.stage-vendor-group-list {
+  display: grid;
+  gap: 6px;
 }
 
 .stage-client-item {

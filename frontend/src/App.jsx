@@ -433,6 +433,7 @@ function AppContent({ onLogout }) {
   const [vendorBreakdownOpen, setVendorBreakdownOpen] = useState(false);
   const [vendorBreakdown, setVendorBreakdown] = useState(null);
   const [vendorBreakdownLoading, setVendorBreakdownLoading] = useState(false);
+  const [sdrVendorFilter, setSdrVendorFilter] = useState("Todos");
   const [stageTimelineLoading, setStageTimelineLoading] = useState(false);
   const [stageTimelineData, setStageTimelineData] = useState(null);
   const [selectedStageKey, setSelectedStageKey] = useState("aguardando");
@@ -711,8 +712,12 @@ function AppContent({ onLogout }) {
       applyDashboardPreset("month");
       return () => {};
     }
+    const extraParams = {};
+    if (dashboardTab === "sdr" && sdrVendorFilter !== "Todos") {
+      extraParams.vendedor = sdrVendorFilter;
+    }
     setDashboardLoading(true);
-    fetch(`/api/dashboard/?${buildDashboardParams()}`)
+    fetch(`/api/dashboard/?${buildDashboardParams(extraParams)}`)
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         if (!active) return;
@@ -731,7 +736,7 @@ function AppContent({ onLogout }) {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, dashboardFetchVersion]);
+  }, [activeView, dashboardTab, sdrVendorFilter, dashboardFetchVersion]);
 
   useEffect(() => {
     let active = true;
@@ -741,8 +746,12 @@ function AppContent({ onLogout }) {
     if (!dashboardDateFrom && !dashboardDateTo) {
       return () => {};
     }
+    const extraParams = {};
+    if (sdrVendorFilter !== "Todos") {
+      extraParams.vendedor = sdrVendorFilter;
+    }
     setStageTimelineLoading(true);
-    fetch(`/api/dashboard/stages/?${buildDashboardParams()}`)
+    fetch(`/api/dashboard/stages/?${buildDashboardParams(extraParams)}`)
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         if (!active) return;
@@ -762,7 +771,7 @@ function AppContent({ onLogout }) {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, dashboardTab, dashboardFetchVersion]);
+  }, [activeView, dashboardTab, sdrVendorFilter, dashboardFetchVersion]);
 
   useEffect(() => {
     let active = true;
@@ -814,6 +823,12 @@ function AppContent({ onLogout }) {
       setDashboardVendor(vendorList[0].vendedor);
     }
   }, [dashboardVendor, vendorList]);
+
+  useEffect(() => {
+    if (!sdrVendorOptions.includes(sdrVendorFilter)) {
+      setSdrVendorFilter("Todos");
+    }
+  }, [sdrVendorFilter, sdrVendorOptions]);
 
   const sdrSeries = useMemo(() => {
     const map = new Map();
@@ -980,6 +995,26 @@ function AppContent({ onLogout }) {
     (acc, stage) => acc + (stage.total || 0),
     0
   );
+
+  const sdrVendorOptions = useMemo(() => {
+    const values = (stageTimelineData?.vendors || [])
+      .map((item) => item?.vendedor)
+      .filter(Boolean);
+    return ["Todos", ...values];
+  }, [stageTimelineData]);
+
+  const selectedStageClientsGrouped = useMemo(() => {
+    const list = selectedTimelineStage?.clients || [];
+    const grouped = new Map();
+    list.forEach((client) => {
+      const vendor = client?.vendedor_nome || "Sem vendedor";
+      if (!grouped.has(vendor)) grouped.set(vendor, []);
+      grouped.get(vendor).push(client);
+    });
+    return [...grouped.entries()]
+      .map(([vendedor, clients]) => ({ vendedor, clients }))
+      .sort((a, b) => b.clients.length - a.clients.length);
+  }, [selectedTimelineStage]);
 
   const stageClientDedupedMessages = useMemo(() => {
     const seen = new Set();
@@ -1542,9 +1577,27 @@ function AppContent({ onLogout }) {
                       <div className="dashboard-section">
                         <div className="section-head">
                           <h3>Timeline por etapa (estratificação)</h3>
-                          <p className="muted">
-                            Clique na barra para listar clientes e abrir histórico da conversa.
-                          </p>
+                          <div className="stage-section-tools">
+                            <p className="muted">
+                              Clique na barra para listar clientes e abrir histórico da conversa.
+                            </p>
+                            <label className="field stage-vendor-filter">
+                              <span>Vendedor</span>
+                              <select
+                                value={sdrVendorFilter}
+                                onChange={(event) => {
+                                  setSdrVendorFilter(event.target.value);
+                                  setDashboardFetchVersion((value) => value + 1);
+                                }}
+                              >
+                                {sdrVendorOptions.map((value) => (
+                                  <option key={value} value={value}>
+                                    {value}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
                         </div>
                         <div className="stage-timeline-grid">
                           {stageTimelineStages.map((stage) => {
@@ -1566,15 +1619,24 @@ function AppContent({ onLogout }) {
                                   {formatCount(stage.total)}
                                 </span>
                                 <span className="stage-timeline-track">
-                                  <span
-                                    className="stage-timeline-bar"
-                                    style={{ height: `${height}%` }}
-                                  />
-                                </span>
-                                <span className="stage-timeline-label">{stage.label}</span>
-                              </button>
-                            );
-                          })}
+                                <span
+                                  className="stage-timeline-bar"
+                                  style={{ height: `${height}%` }}
+                                />
+                              </span>
+                              <span className="stage-timeline-label">{stage.label}</span>
+                              <span className="stage-timeline-vendors">
+                                {(stage.vendors || [])
+                                  .slice(0, 2)
+                                  .map(
+                                    (vendor) =>
+                                      `${vendor.vendedor}: ${formatCount(vendor.total)}`
+                                  )
+                                  .join(" · ") || "Sem vendedor"}
+                              </span>
+                            </button>
+                          );
+                        })}
                         </div>
                         <div className="stage-clients-card">
                           <div className="stage-clients-head">
@@ -1588,22 +1650,31 @@ function AppContent({ onLogout }) {
                           </div>
                           {stageTimelineLoading ? (
                             <p className="empty">Carregando estratificação...</p>
-                          ) : selectedTimelineStage?.clients?.length ? (
+                          ) : selectedStageClientsGrouped.length > 0 ? (
                             <div className="stage-clients-list">
-                              {selectedTimelineStage.clients.map((client) => (
-                                <button
-                                  key={`${selectedTimelineStage.key}-${client.chat_id}`}
-                                  type="button"
-                                  className="stage-client-item"
-                                  onClick={() => setStageClientModal(client)}
+                              {selectedStageClientsGrouped.map((group) => (
+                                <div
+                                  className="stage-vendor-group"
+                                  key={`${selectedTimelineStage?.key}-${group.vendedor}`}
                                 >
-                                  <strong>{client.cliente_nome || client.chat_id}</strong>
-                                  <span>
-                                    {(client.cliente_telefone || "--") +
-                                      " · " +
-                                      (client.vendedor_nome || "--")}
-                                  </span>
-                                </button>
+                                  <div className="stage-vendor-group-head">
+                                    <strong>{group.vendedor}</strong>
+                                    <span>{formatCount(group.clients.length)}</span>
+                                  </div>
+                                  <div className="stage-vendor-group-list">
+                                    {group.clients.map((client) => (
+                                      <button
+                                        key={`${selectedTimelineStage.key}-${client.chat_id}`}
+                                        type="button"
+                                        className="stage-client-item"
+                                        onClick={() => setStageClientModal(client)}
+                                      >
+                                        <strong>{client.cliente_nome || client.chat_id}</strong>
+                                        <span>{client.cliente_telefone || "--"}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
                               ))}
                             </div>
                           ) : (

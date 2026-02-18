@@ -547,13 +547,22 @@ def dashboard_stage_stratification_api(request):
             key: {"key": key, "label": label, "total": 0, "clients": []}
             for key, label in STAGE_STRATIFICATION_ORDER
         }
+        stage_vendor_totals = {key: {} for key, _ in STAGE_STRATIFICATION_ORDER}
+        global_vendor_totals = {}
 
         for row in rows:
             stage_key = row.get("stage_key")
             bucket = stage_map.get(stage_key)
             if not bucket:
                 continue
+            vendor_name = row.get("vendedor_nome") or "Sem vendedor"
             bucket["total"] += 1
+            stage_vendor_totals[stage_key][vendor_name] = (
+                stage_vendor_totals[stage_key].get(vendor_name, 0) + 1
+            )
+            global_vendor_totals[vendor_name] = (
+                global_vendor_totals.get(vendor_name, 0) + 1
+            )
             if len(bucket["clients"]) < clients_limit:
                 bucket["clients"].append(
                     {
@@ -567,11 +576,29 @@ def dashboard_stage_stratification_api(request):
                     }
                 )
 
-        stages = [stage_map[key] for key, _ in STAGE_STRATIFICATION_ORDER]
+        stages = []
+        for key, _ in STAGE_STRATIFICATION_ORDER:
+            stage_item = stage_map[key]
+            stage_item["vendors"] = [
+                {"vendedor": name, "total": total}
+                for name, total in sorted(
+                    stage_vendor_totals[key].items(),
+                    key=lambda item: (-item[1], item[0]),
+                )
+            ]
+            stages.append(stage_item)
         total_classified = sum(item["total"] for item in stages)
+        vendors = [
+            {"vendedor": name, "total": total}
+            for name, total in sorted(
+                global_vendor_totals.items(),
+                key=lambda item: (-item[1], item[0]),
+            )
+        ]
         return JsonResponse(
             {
                 "stages": stages,
+                "vendors": vendors,
                 "total_classified": total_classified,
                 "clients_limit": clients_limit,
             }
