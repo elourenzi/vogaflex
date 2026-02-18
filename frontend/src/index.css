@@ -264,20 +264,6 @@ input {
   gap: 12px;
 }
 
-.stage-section-tools {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.stage-vendor-filter {
-  min-width: 220px;
-}
-
-.stage-vendor-filter span {
-  font-size: 0.72rem;
-}
-
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

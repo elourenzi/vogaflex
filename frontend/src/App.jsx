@@ -227,7 +227,6 @@ const STAGE_TIMELINE_ORDER = [
 ];
 
 const EMPTY_LIST = Object.freeze([]);
-const EMPTY_MAP = Object.freeze({});
 
 const isBotContent = (entry, content) => {
   const messageType = normalizeBotText(entry.msg_tipo);
@@ -433,7 +432,6 @@ function AppContent({ onLogout }) {
   const [vendorBreakdownOpen, setVendorBreakdownOpen] = useState(false);
   const [vendorBreakdown, setVendorBreakdown] = useState(null);
   const [vendorBreakdownLoading, setVendorBreakdownLoading] = useState(false);
-  const [sdrVendorFilter, setSdrVendorFilter] = useState("Todos");
   const [stageTimelineLoading, setStageTimelineLoading] = useState(false);
   const [stageTimelineData, setStageTimelineData] = useState(null);
   const [selectedStageKey, setSelectedStageKey] = useState("aguardando");
@@ -712,12 +710,8 @@ function AppContent({ onLogout }) {
       applyDashboardPreset("month");
       return () => {};
     }
-    const extraParams = {};
-    if (dashboardTab === "sdr" && sdrVendorFilter !== "Todos") {
-      extraParams.vendedor = sdrVendorFilter;
-    }
     setDashboardLoading(true);
-    fetch(`/api/dashboard/?${buildDashboardParams(extraParams)}`)
+    fetch(`/api/dashboard/?${buildDashboardParams()}`)
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         if (!active) return;
@@ -736,22 +730,23 @@ function AppContent({ onLogout }) {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, dashboardTab, sdrVendorFilter, dashboardFetchVersion]);
+  }, [activeView, dashboardTab, dashboardFetchVersion]);
 
   useEffect(() => {
     let active = true;
-    if (activeView !== "dashboard" || dashboardTab !== "sdr") {
+    if (activeView !== "dashboard" || dashboardTab !== "vendors") {
       return () => {};
     }
     if (!dashboardDateFrom && !dashboardDateTo) {
       return () => {};
     }
-    const extraParams = {};
-    if (sdrVendorFilter !== "Todos") {
-      extraParams.vendedor = sdrVendorFilter;
-    }
+    if (!dashboardVendor) return () => {};
     setStageTimelineLoading(true);
-    fetch(`/api/dashboard/stages/?${buildDashboardParams(extraParams)}`)
+    fetch(
+      `/api/dashboard/stages/?${buildDashboardParams({
+        vendedor: dashboardVendor,
+      })}`
+    )
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         if (!active) return;
@@ -771,7 +766,7 @@ function AppContent({ onLogout }) {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, dashboardTab, sdrVendorFilter, dashboardFetchVersion]);
+  }, [activeView, dashboardTab, dashboardVendor, dashboardFetchVersion]);
 
   useEffect(() => {
     let active = true;
@@ -810,10 +805,6 @@ function AppContent({ onLogout }) {
       (vendorData?.summary || EMPTY_LIST).filter(
         (item) => !isSdrAttendant(item?.vendedor)
       ),
-    [vendorData]
-  );
-  const vendorScores = useMemo(
-    () => vendorData?.scores || EMPTY_MAP,
     [vendorData]
   );
 
@@ -900,7 +891,6 @@ function AppContent({ onLogout }) {
   const selectedVendorData = vendorList.find(
     (item) => item.vendedor === dashboardVendor
   );
-  const selectedVendorScores = vendorScores?.[dashboardVendor] || [];
 
   const contactsBreakdownStages = vendorBreakdown?.stages || [];
   const contactsBreakdownTotal =
@@ -989,19 +979,6 @@ function AppContent({ onLogout }) {
     (acc, stage) => acc + (stage.total || 0),
     0
   );
-
-  const sdrVendorOptions = useMemo(() => {
-    const values = (stageTimelineData?.vendors || [])
-      .map((item) => item?.vendedor)
-      .filter(Boolean);
-    return ["Todos", ...values];
-  }, [stageTimelineData]);
-
-  useEffect(() => {
-    if (!sdrVendorOptions.includes(sdrVendorFilter)) {
-      setSdrVendorFilter("Todos");
-    }
-  }, [sdrVendorFilter, sdrVendorOptions]);
 
   const selectedStageClientsGrouped = useMemo(() => {
     const list = selectedTimelineStage?.clients || [];
@@ -1576,114 +1553,6 @@ function AppContent({ onLogout }) {
                     <>
                       <div className="dashboard-section">
                         <div className="section-head">
-                          <h3>Timeline por etapa (estratificação)</h3>
-                          <div className="stage-section-tools">
-                            <p className="muted">
-                              Clique na barra para listar clientes e abrir histórico da conversa.
-                            </p>
-                            <label className="field stage-vendor-filter">
-                              <span>Vendedor</span>
-                              <select
-                                value={sdrVendorFilter}
-                                onChange={(event) => {
-                                  setSdrVendorFilter(event.target.value);
-                                  setDashboardFetchVersion((value) => value + 1);
-                                }}
-                              >
-                                {sdrVendorOptions.map((value) => (
-                                  <option key={value} value={value}>
-                                    {value}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          </div>
-                        </div>
-                        <div className="stage-timeline-grid">
-                          {stageTimelineStages.map((stage) => {
-                            const height = Math.max(
-                              8,
-                              Math.round((stage.total / stageTimelineMax) * 100)
-                            );
-                            const isActive = selectedTimelineStage?.key === stage.key;
-                            return (
-                              <button
-                                key={stage.key}
-                                type="button"
-                                className={`stage-timeline-item${
-                                  isActive ? " is-active" : ""
-                                }`}
-                                onClick={() => setSelectedStageKey(stage.key)}
-                              >
-                                <span className="stage-timeline-count">
-                                  {formatCount(stage.total)}
-                                </span>
-                                <span className="stage-timeline-track">
-                                <span
-                                  className="stage-timeline-bar"
-                                  style={{ height: `${height}%` }}
-                                />
-                              </span>
-                              <span className="stage-timeline-label">{stage.label}</span>
-                              <span className="stage-timeline-vendors">
-                                {(stage.vendors || [])
-                                  .slice(0, 2)
-                                  .map(
-                                    (vendor) =>
-                                      `${vendor.vendedor}: ${formatCount(vendor.total)}`
-                                  )
-                                  .join(" · ") || "Sem vendedor"}
-                              </span>
-                            </button>
-                          );
-                        })}
-                        </div>
-                        <div className="stage-clients-card">
-                          <div className="stage-clients-head">
-                            <h4>
-                              {selectedTimelineStage?.label || "Etapa"} ·{" "}
-                              {formatCount(selectedTimelineStage?.total || 0)}
-                            </h4>
-                            <p className="muted">
-                              Base classificada: {formatCount(stageTimelineTotalClassified)}
-                            </p>
-                          </div>
-                          {stageTimelineLoading ? (
-                            <p className="empty">Carregando estratificação...</p>
-                          ) : selectedStageClientsGrouped.length > 0 ? (
-                            <div className="stage-clients-list">
-                              {selectedStageClientsGrouped.map((group) => (
-                                <div
-                                  className="stage-vendor-group"
-                                  key={`${selectedTimelineStage?.key}-${group.vendedor}`}
-                                >
-                                  <div className="stage-vendor-group-head">
-                                    <strong>{group.vendedor}</strong>
-                                    <span>{formatCount(group.clients.length)}</span>
-                                  </div>
-                                  <div className="stage-vendor-group-list">
-                                    {group.clients.map((client) => (
-                                      <button
-                                        key={`${selectedTimelineStage.key}-${client.chat_id}`}
-                                        type="button"
-                                        className="stage-client-item"
-                                        onClick={() => setStageClientModal(client)}
-                                      >
-                                        <strong>{client.cliente_nome || client.chat_id}</strong>
-                                        <span>{client.cliente_telefone || "--"}</span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="empty">Nenhum cliente nesta etapa.</p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="dashboard-section">
-                        <div className="section-head">
                           <h3>Resumo SDR</h3>
                           <p className="muted">
                             Leitura do funil de contatos líquidos (sem transferidos).
@@ -1925,20 +1794,102 @@ function AppContent({ onLogout }) {
                                   <p className="stat-foot">Não registrado no CRM</p>
                                 </article>
                               </div>
-                              <div className="score-panel">
-                                <h4>Score do bot</h4>
-                                {selectedVendorScores.length === 0 ? (
-                                  <p className="empty">Sem scores no período.</p>
-                                ) : (
-                                  <div className="score-grid">
-                                    {selectedVendorScores.map((score) => (
-                                      <div className="score-chip" key={score.score}>
-                                        <span>{score.score}</span>
-                                        <strong>{formatCount(score.total)}</strong>
-                                      </div>
-                                    ))}
+                              <div className="dashboard-section">
+                                <div className="section-head">
+                                  <h3>Timeline por etapa (estratificação)</h3>
+                                  <p className="muted">
+                                    Clique na barra para listar clientes e abrir histórico.
+                                  </p>
+                                </div>
+                                <div className="stage-timeline-grid">
+                                  {stageTimelineStages.map((stage) => {
+                                    const height = Math.max(
+                                      8,
+                                      Math.round((stage.total / stageTimelineMax) * 100)
+                                    );
+                                    const isActive = selectedTimelineStage?.key === stage.key;
+                                    return (
+                                      <button
+                                        key={stage.key}
+                                        type="button"
+                                        className={`stage-timeline-item${
+                                          isActive ? " is-active" : ""
+                                        }`}
+                                        onClick={() => setSelectedStageKey(stage.key)}
+                                      >
+                                        <span className="stage-timeline-count">
+                                          {formatCount(stage.total)}
+                                        </span>
+                                        <span className="stage-timeline-track">
+                                          <span
+                                            className="stage-timeline-bar"
+                                            style={{ height: `${height}%` }}
+                                          />
+                                        </span>
+                                        <span className="stage-timeline-label">
+                                          {stage.label}
+                                        </span>
+                                        <span className="stage-timeline-vendors">
+                                          {(stage.vendors || [])
+                                            .slice(0, 1)
+                                            .map(
+                                              (vendor) =>
+                                                `${vendor.vendedor}: ${formatCount(
+                                                  vendor.total
+                                                )}`
+                                            )
+                                            .join(" · ") || "Sem vendedor"}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <div className="stage-clients-card">
+                                  <div className="stage-clients-head">
+                                    <h4>
+                                      {selectedTimelineStage?.label || "Etapa"} ·{" "}
+                                      {formatCount(selectedTimelineStage?.total || 0)}
+                                    </h4>
+                                    <p className="muted">
+                                      Base classificada:{" "}
+                                      {formatCount(stageTimelineTotalClassified)}
+                                    </p>
                                   </div>
-                                )}
+                                  {stageTimelineLoading ? (
+                                    <p className="empty">Carregando estratificação...</p>
+                                  ) : selectedStageClientsGrouped.length > 0 ? (
+                                    <div className="stage-clients-list">
+                                      {selectedStageClientsGrouped.map((group) => (
+                                        <div
+                                          className="stage-vendor-group"
+                                          key={`${selectedTimelineStage?.key}-${group.vendedor}`}
+                                        >
+                                          <div className="stage-vendor-group-head">
+                                            <strong>{group.vendedor}</strong>
+                                            <span>{formatCount(group.clients.length)}</span>
+                                          </div>
+                                          <div className="stage-vendor-group-list">
+                                            {group.clients.map((client) => (
+                                              <button
+                                                key={`${selectedTimelineStage.key}-${client.chat_id}`}
+                                                type="button"
+                                                className="stage-client-item"
+                                                onClick={() => setStageClientModal(client)}
+                                              >
+                                                <strong>
+                                                  {client.cliente_nome || client.chat_id}
+                                                </strong>
+                                                <span>{client.cliente_telefone || "--"}</span>
+                                              </button>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="empty">Nenhum cliente nesta etapa.</p>
+                                  )}
+                                </div>
                               </div>
                             </>
                           )}
