@@ -1627,7 +1627,9 @@ def dashboard_api(request):
                 )
                 SELECT
                   f.attendant_name AS vendedor,
-                  COUNT(*) FILTER (WHERE b.bot_transfer_ts IS NULL) AS contacts_received,
+                  COUNT(*) FILTER (
+                    WHERE LOWER(COALESCE(f.current_funnel_stage, '')) NOT IN ('finalizado', 'finished', 'closed', 'lixo')
+                  ) AS contacts_received,
                   COUNT(*) FILTER (
                     WHERE COALESCE(sbv.budget_value, 0) > 0
                       AND NOT (f.reason_norm ~ '{support_reason_pattern}')
