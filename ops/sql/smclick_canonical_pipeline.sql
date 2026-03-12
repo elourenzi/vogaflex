@@ -231,8 +231,14 @@ BEGIN
     NULLIF(BTRIM(e.payload #>> '{infos,chat,finish_reason,reason}'), ''),
     NULLIF(BTRIM(e.payload #>> '{infos,chat,contact,name}'), ''),
     NULLIF(BTRIM(e.payload #>> '{infos,chat,contact,telephone}'), ''),
-    NULLIF(BTRIM(e.payload #>> '{infos,message,sent_by,name}'), ''),
-    NULLIF(BTRIM(e.payload #>> '{infos,message,sent_by,email}'), ''),
+    COALESCE(
+      (SELECT NULLIF(BTRIM(a->>'name'), '') FROM jsonb_array_elements(CASE WHEN jsonb_typeof(COALESCE(e.payload #> '{infos,chat,attendant}', '[]'::jsonb)) = 'array' THEN COALESCE(e.payload #> '{infos,chat,attendant}', '[]'::jsonb) ELSE '[]'::jsonb END) a WHERE LOWER(COALESCE(a->>'principal', '')) IN ('true', 't', '1') LIMIT 1),
+      (SELECT NULLIF(BTRIM(a->>'name'), '') FROM jsonb_array_elements(CASE WHEN jsonb_typeof(COALESCE(e.payload #> '{infos,chat,attendant}', '[]'::jsonb)) = 'array' THEN COALESCE(e.payload #> '{infos,chat,attendant}', '[]'::jsonb) ELSE '[]'::jsonb END) a LIMIT 1)
+    ),
+    COALESCE(
+      (SELECT NULLIF(BTRIM(a->>'email'), '') FROM jsonb_array_elements(CASE WHEN jsonb_typeof(COALESCE(e.payload #> '{infos,chat,attendant}', '[]'::jsonb)) = 'array' THEN COALESCE(e.payload #> '{infos,chat,attendant}', '[]'::jsonb) ELSE '[]'::jsonb END) a WHERE LOWER(COALESCE(a->>'principal', '')) IN ('true', 't', '1') LIMIT 1),
+      (SELECT NULLIF(BTRIM(a->>'email'), '') FROM jsonb_array_elements(CASE WHEN jsonb_typeof(COALESCE(e.payload #> '{infos,chat,attendant}', '[]'::jsonb)) = 'array' THEN COALESCE(e.payload #> '{infos,chat,attendant}', '[]'::jsonb) ELSE '[]'::jsonb END) a LIMIT 1)
+    ),
     seg_budget.content_numeric,
     seg_order.content_numeric,
     seg_product.content_text,
@@ -539,21 +545,26 @@ CREATE OR REPLACE VIEW public.vw_smclick_conversations_latest AS
 SELECT
   c.chat_id,
   c.protocol::text AS protocolo,
+  c.flow AS tipo_fluxo,
   c.contact_name AS cliente_nome,
   c.contact_phone AS cliente_telefone,
   c.attendant_name AS vendedor_nome,
   c.attendant_email AS vendedor_email,
+  c.department_name AS departamento,
   c.status AS status_conversa,
   c.current_stage AS etapa_funil,
-  c.department_name AS departamento,
   c.current_stage AS coluna_kanban,
   c.chat_created_at AS data_criacao_chat,
-  NULL::timestamptz AS data_fechamento,
+  CASE WHEN c.status IN ('finished', 'closed') THEN c.chat_updated_at ELSE NULL END AS data_fechamento,
   c.budget_value AS valor_orcamento,
+  c.order_value AS valor_pedido,
   c.loss_reason AS motivo_perda,
   c.product AS produto_interesse,
+  c.finish_reason,
+  c.last_event_at AS ultima_atualizacao,
   c.chat_updated_at AS updated_at,
-  c.inserted_at AS created_at
+  c.inserted_at AS created_at,
+  c.refreshed_at
 FROM public.smclick_chat c;
 
 CREATE OR REPLACE VIEW public.vw_smclick_messages_timeline AS

@@ -122,6 +122,20 @@ def _owners_view_id_column():
 def _messages_union_sql():
     return """
         SELECT
+          0 AS source_priority,
+          (sm.chat_id::text || '|' || sm.message_id) AS source_id,
+          sm.chat_id::text AS chat_id,
+          sm.evento_timestamp,
+          NULLIF(BTRIM(COALESCE(sm.msg_tipo, '')), '') AS msg_tipo,
+          NULLIF(BTRIM(COALESCE(sm.msg_conteudo, '')), '') AS msg_conteudo,
+          sm.msg_from_client,
+          sm.msg_status_envio
+        FROM vw_smclick_messages_timeline sm
+        WHERE sm.chat_id IS NOT NULL
+
+        UNION ALL
+
+        SELECT
           1 AS source_priority,
           sm.id::text AS source_id,
           sm.chat_id::text AS chat_id,
@@ -214,6 +228,15 @@ def conversations_api(request):
         ),
         conv_sources AS (
           SELECT
+            0 AS source_priority,
+            c.chat_id::text AS chat_id,
+            to_jsonb(c) AS j
+          FROM vw_smclick_conversations_latest c
+          WHERE c.chat_id IS NOT NULL
+
+          UNION ALL
+
+          SELECT
             1 AS source_priority,
             c.chat_id::text AS chat_id,
             to_jsonb(c) AS j
@@ -271,7 +294,8 @@ def conversations_api(request):
             COALESCE(
               NULLIF(BTRIM(COALESCE(src.j->>'valor_orcamento_atual', src.j->>'valor_orcamento', src.j->>'budget_value', '')), ''),
               '0'
-            ) AS valor_orcamento
+            ) AS valor_orcamento,
+            NULLIF(BTRIM(COALESCE(src.j->>'valor_pedido', src.j->>'order_value', '')), '') AS valor_pedido
           FROM conv_sources src
           ORDER BY src.chat_id, src.source_priority ASC
         ),
@@ -304,6 +328,7 @@ def conversations_api(request):
           c.data_criacao_chat,
           c.data_fechamento,
           c.valor_orcamento,
+          c.valor_pedido,
           c.motivo_perda,
           c.produto_interesse,
           c.ai_agent_rating,
@@ -428,6 +453,15 @@ def dashboard_stage_stratification_api(request):
 
     query = f"""
         WITH conv_sources AS (
+          SELECT
+            0 AS source_priority,
+            sc.chat_id::text AS chat_id,
+            to_jsonb(sc) AS j
+          FROM vw_smclick_conversations_latest sc
+          WHERE sc.chat_id IS NOT NULL
+
+          UNION ALL
+
           SELECT
             1 AS source_priority,
             sc.chat_id::text AS chat_id,
@@ -652,10 +686,50 @@ def dashboard_api(request):
 
     where_sql = "WHERE " + " AND ".join(where_clauses)
     where_sql_no_vendor = "WHERE " + " AND ".join(where_clauses_no_vendor)
+    # Unified base: smclick_chat (source 0) + conversations (source 1), mapped to conversations schema
+    unified_base_sql = """
+      SELECT DISTINCT ON (chat_id)
+        chat_id, contact_name, attendant_name, department_name,
+        current_funnel_stage, start_time, end_time, created_at, updated_at,
+        budget_value, contact_reason, instance_id
+      FROM (
+        SELECT
+          sc.chat_id::text AS chat_id,
+          sc.contact_name,
+          sc.attendant_name,
+          sc.department_name,
+          sc.status AS current_funnel_stage,
+          sc.chat_created_at AS start_time,
+          CASE WHEN sc.status IN ('finished', 'closed') THEN sc.chat_updated_at ELSE NULL END AS end_time,
+          sc.inserted_at AS created_at,
+          sc.refreshed_at AS updated_at,
+          sc.budget_value,
+          NULL::text AS contact_reason,
+          NULL::text AS instance_id,
+          0 AS _src
+        FROM smclick_chat sc
+        WHERE sc.chat_id IS NOT NULL
+        UNION ALL
+        SELECT
+          c.chat_id, c.contact_name, c.attendant_name,
+          NULLIF(BTRIM(COALESCE(
+            to_jsonb(c)->>'department_name',
+            to_jsonb(c)->>'department',
+            ''
+          )), '') AS department_name,
+          c.current_funnel_stage, c.start_time, c.end_time,
+          c.created_at, c.updated_at, c.budget_value, c.contact_reason,
+          c.instance_id::text AS instance_id,
+          1 AS _src
+        FROM conversations c
+        WHERE c.chat_id IS NOT NULL
+      ) u
+      ORDER BY chat_id, _src ASC, COALESCE(start_time, created_at) DESC NULLS LAST
+    """
     filtered_base_sql = f"""
       SELECT DISTINCT ON (c.chat_id)
         c.*
-      FROM conversations c
+      FROM ({unified_base_sql}) c
       {where_sql}
       ORDER BY
         c.chat_id,
@@ -665,7 +739,7 @@ def dashboard_api(request):
     filtered_base_sql_no_vendor = f"""
       SELECT DISTINCT ON (c.chat_id)
         c.*
-      FROM conversations c
+      FROM ({unified_base_sql}) c
       {where_sql_no_vendor}
       ORDER BY
         c.chat_id,
@@ -933,35 +1007,9 @@ def dashboard_api(request):
                     ) AS stage_norm,
                     {owners_norm_select}
                     f.attendant_name,
-                    COALESCE(
-                      NULLIF(
-                        BTRIM(
-                          COALESCE(
-                            to_jsonb(f)->>'department_name',
-                            to_jsonb(f)->>'department',
-                            ''
-                          )
-                        ),
-                        ''
-                      ),
-                      ''
-                    ) AS department_name,
+                    COALESCE(f.department_name, '') AS department_name,
                     translate(
-                      lower(
-                        COALESCE(
-                          NULLIF(
-                            BTRIM(
-                              COALESCE(
-                                to_jsonb(f)->>'department_name',
-                                to_jsonb(f)->>'department',
-                                ''
-                              )
-                            ),
-                            ''
-                          ),
-                          ''
-                        )
-                      ),
+                      lower(COALESCE(f.department_name, '')),
                       'áàâãäéèêëíìîïóòôõöúùûüç',
                       'aaaaaeeeeiiiiooooouuuuc'
                     ) AS department_norm
@@ -1050,35 +1098,9 @@ def dashboard_api(request):
                     ) AS stage_norm,
                     {owners_norm_select}
                     f.attendant_name,
-                    COALESCE(
-                      NULLIF(
-                        BTRIM(
-                          COALESCE(
-                            to_jsonb(f)->>'department_name',
-                            to_jsonb(f)->>'department',
-                            ''
-                          )
-                        ),
-                        ''
-                      ),
-                      ''
-                    ) AS department_name,
+                    COALESCE(f.department_name, '') AS department_name,
                     translate(
-                      lower(
-                        COALESCE(
-                          NULLIF(
-                            BTRIM(
-                              COALESCE(
-                                to_jsonb(f)->>'department_name',
-                                to_jsonb(f)->>'department',
-                                ''
-                              )
-                            ),
-                            ''
-                          ),
-                          ''
-                        )
-                      ),
+                      lower(COALESCE(f.department_name, '')),
                       'áàâãäéèêëíìîïóòôõöúùûüç',
                       'aaaaaeeeeiiiiooooouuuuc'
                     ) AS department_norm
@@ -1162,11 +1184,7 @@ def dashboard_api(request):
                         COALESCE(
                           NULLIF(
                             BTRIM(
-                              COALESCE(
-                                to_jsonb(f)->>'department_name',
-                                to_jsonb(f)->>'department',
-                                ''
-                              )
+                              COALESCE(f.department_name, '')
                             ),
                             ''
                           ),
@@ -1220,11 +1238,7 @@ def dashboard_api(request):
                     MAX(
                       NULLIF(
                         BTRIM(
-                          COALESCE(
-                            to_jsonb(f)->>'department_name',
-                            to_jsonb(f)->>'department',
-                            ''
-                          )
+                          COALESCE(f.department_name, '')
                         ),
                         ''
                       )
@@ -1242,11 +1256,7 @@ def dashboard_api(request):
                     ) ~ '(^|[^a-z])(emill?y|emily)([^a-z]|$)'
                     OR translate(
                       lower(
-                        COALESCE(
-                          to_jsonb(f)->>'department_name',
-                          to_jsonb(f)->>'department',
-                          ''
-                        )
+                        COALESCE(f.department_name, '')
                       ),
                       'áàâãäéèêëíìîïóòôõöúùûüç',
                       'aaaaaeeeeiiiiooooouuuuc'
@@ -1267,11 +1277,7 @@ def dashboard_api(request):
                 ) ~ '(^|[^a-z])(emill?y|emily)([^a-z]|$)'
                 OR translate(
                   lower(
-                    COALESCE(
-                      to_jsonb(f)->>'department_name',
-                      to_jsonb(f)->>'department',
-                      ''
-                    )
+                    COALESCE(f.department_name, '')
                   ),
                   'áàâãäéèêëíìîïóòôõöúùûüç',
                   'aaaaaeeeeiiiiooooouuuuc'
