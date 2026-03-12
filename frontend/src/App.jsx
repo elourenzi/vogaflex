@@ -1319,10 +1319,12 @@ function AppContent({ onLogout }) {
           ) : (
             dedupedMessages.map((entry, index) => {
               const content = cleanMessageText(messageContent(entry));
-              const { name: vendorName, content: cleanedContent } =
+              const { name: vendorNameFromContent, content: cleanedContent } =
                 splitVendorNameFromContent(content);
               const fromClient = entry.msg_from_client === true;
-              const bot = isBotContent(entry, content) || (!fromClient && !vendorName);
+              const apiSentBy = entry.sent_by_name || null;
+              const vendorName = apiSentBy || vendorNameFromContent;
+              const bot = !fromClient && !apiSentBy && (isBotContent(entry, content) || !vendorNameFromContent);
               const sender = {
                 name: bot
                   ? "Bot"
@@ -1330,7 +1332,7 @@ function AppContent({ onLogout }) {
                   ? selected.cliente_nome || "Cliente"
                   : vendorName || selected.vendedor_nome || "Vendedor",
                 role: fromClient ? "client" : "vendor",
-                content: fromClient ? content : vendorName ? cleanedContent : content,
+                content: fromClient ? content : vendorNameFromContent ? cleanedContent : content,
               };
               const statusText = String(entry.msg_status_envio || "").trim();
               const showStatus =
@@ -1995,10 +1997,12 @@ function AppContent({ onLogout }) {
               ) : (
                 stageClientDedupedMessages.map((entry, index) => {
                   const content = cleanMessageText(messageContent(entry));
-                  const { name: vendorName, content: cleanedContent } =
+                  const { name: vendorNameFromContent, content: cleanedContent } =
                     splitVendorNameFromContent(content);
                   const fromClient = entry.msg_from_client === true;
-                  const bot = isBotContent(entry, content) || (!fromClient && !vendorName);
+                  const apiSentBy = entry.sent_by_name || null;
+                  const vendorName = apiSentBy || vendorNameFromContent;
+                  const bot = !fromClient && !apiSentBy && (isBotContent(entry, content) || !vendorNameFromContent);
                   const sender = {
                     name: bot
                       ? "Bot"
@@ -2006,7 +2010,7 @@ function AppContent({ onLogout }) {
                       ? stageClientModal.cliente_nome || "Cliente"
                       : vendorName || stageClientModal.vendedor_nome || "Vendedor",
                     role: fromClient ? "client" : "vendor",
-                    content: fromClient ? content : vendorName ? cleanedContent : content,
+                    content: fromClient ? content : vendorNameFromContent ? cleanedContent : content,
                   };
                   const statusText = String(entry.msg_status_envio || "").trim();
                   const showStatus = statusText && statusText.toLowerCase() !== "true";

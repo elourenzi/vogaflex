@@ -129,7 +129,8 @@ def _messages_union_sql():
           NULLIF(BTRIM(COALESCE(sm.msg_tipo, '')), '') AS msg_tipo,
           NULLIF(BTRIM(COALESCE(sm.msg_conteudo, '')), '') AS msg_conteudo,
           sm.msg_from_client,
-          sm.msg_status_envio
+          sm.msg_status_envio,
+          NULLIF(BTRIM(COALESCE(sm.sent_by_name, '')), '') AS sent_by_name
         FROM vw_smclick_messages_timeline sm
         WHERE sm.chat_id IS NOT NULL
 
@@ -151,7 +152,8 @@ def _messages_union_sql():
             WHEN sm.msg_status_envio IS TRUE THEN NULL
             WHEN sm.msg_status_envio IS FALSE THEN COALESCE(NULLIF(BTRIM(sm.msg_erro_motivo), ''), 'false')
             ELSE NULL
-          END AS msg_status_envio
+          END AS msg_status_envio,
+          NULLIF(BTRIM(COALESCE(sm.author_name, '')), '') AS sent_by_name
         FROM semclick_messages sm
         WHERE sm.chat_id IS NOT NULL
 
@@ -169,7 +171,8 @@ def _messages_union_sql():
             WHEN m.from_client IS FALSE THEN FALSE
             ELSE NULL
           END AS msg_from_client,
-          NULL::text AS msg_status_envio
+          NULL::text AS msg_status_envio,
+          NULL::text AS sent_by_name
         FROM messages m
         WHERE m.chat_id IS NOT NULL
     """
@@ -381,6 +384,7 @@ def messages_api(request):
             mu.msg_tipo,
             mu.msg_from_client,
             mu.msg_status_envio,
+            mu.sent_by_name,
             ROW_NUMBER() OVER (
               PARTITION BY
                 mu.chat_id,
@@ -404,7 +408,8 @@ def messages_api(request):
           r.msg_conteudo,
           r.msg_tipo,
           r.msg_from_client,
-          r.msg_status_envio
+          r.msg_status_envio,
+          r.sent_by_name
         FROM ranked r
         WHERE r.dedup_rank = 1
         ORDER BY r.evento_timestamp ASC NULLS LAST, r.id ASC
