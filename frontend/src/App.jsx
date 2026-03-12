@@ -439,6 +439,9 @@ function AppContent({ onLogout }) {
   const [stageClientModal, setStageClientModal] = useState(null);
   const [stageClientMessages, setStageClientMessages] = useState([]);
   const [stageClientMessagesLoading, setStageClientMessagesLoading] = useState(false);
+  const [deadContactsOpen, setDeadContactsOpen] = useState(false);
+  const [deadContactsList, setDeadContactsList] = useState([]);
+  const [deadContactsLoading, setDeadContactsLoading] = useState(false);
 
   const loadConversations = async () => {
     const params = new URLSearchParams();
@@ -1074,6 +1077,20 @@ function AppContent({ onLogout }) {
       active = false;
     };
   }, [stageClientModal]);
+
+  const openDeadContacts = () => {
+    setDeadContactsOpen(true);
+    setDeadContactsLoading(true);
+    const params = new URLSearchParams();
+    if (dashboardDateFrom) params.set("date_from", dashboardDateFrom);
+    if (dashboardDateTo) params.set("date_to", dashboardDateTo);
+    if (dashboardVendor) params.set("vendedor", dashboardVendor);
+    fetch(`/api/dashboard/dead/?${params}`)
+      .then((res) => res.json())
+      .then((data) => setDeadContactsList(data.conversations || []))
+      .catch(() => setDeadContactsList([]))
+      .finally(() => setDeadContactsLoading(false));
+  };
 
   return (
     <div className="app-shell">
@@ -1789,19 +1806,20 @@ function AppContent({ onLogout }) {
                                       selectedVendorData.dead_contacts || 0,
                                       selectedVendorData.contacts_received || 0
                                     )} do total`,
+                                    onClick: openDeadContacts,
                                   },
                                 ].map((item) =>
-                                  item.clickable ? (
+                                  item.clickable || item.onClick ? (
                                     <button
                                       key={item.label}
                                       type="button"
                                       className={`funnel-step is-clickable${
-                                        vendorBreakdownOpen ? " is-active" : ""
+                                        item.clickable && vendorBreakdownOpen ? " is-active" : ""
+                                      }${
+                                        item.onClick === openDeadContacts && deadContactsOpen ? " is-active" : ""
                                       }`}
-                                      onClick={() =>
-                                        setVendorBreakdownOpen((open) => !open)
-                                      }
-                                      aria-expanded={vendorBreakdownOpen}
+                                      onClick={item.onClick || (() => setVendorBreakdownOpen((open) => !open))}
+                                      aria-expanded={item.clickable ? vendorBreakdownOpen : deadContactsOpen}
                                     >
                                       <p className="stat-label">{item.label}</p>
                                       <p className="stat-value">
@@ -2049,6 +2067,64 @@ function AppContent({ onLogout }) {
           </div>
         </div>
       )}
+      {deadContactsOpen && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setDeadContactsOpen(false)}
+        >
+          <div
+            className="modal-card"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <p className="stat-label">Conversas sem resposta</p>
+                <p className="stat-foot">
+                  {deadContactsList.length} contato{deadContactsList.length !== 1 ? "s" : ""} sem retorno do vendedor
+                </p>
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setDeadContactsOpen(false)}
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            {deadContactsLoading ? (
+              <p className="empty">Carregando...</p>
+            ) : deadContactsList.length === 0 ? (
+              <p className="empty">Nenhuma conversa sem resposta no período.</p>
+            ) : (
+              <div className="stage-client-list">
+                {deadContactsList.map((item) => (
+                  <button
+                    key={item.chat_id}
+                    type="button"
+                    className="stage-client-item"
+                    onClick={() => {
+                      setDeadContactsOpen(false);
+                      setStageClientModal({
+                        chat_id: item.chat_id,
+                        cliente_nome: item.cliente_nome || item.chat_id,
+                        cliente_telefone: null,
+                        vendedor_nome: item.vendedor_nome,
+                      });
+                    }}
+                  >
+                    <span className="client-name">{item.cliente_nome || item.chat_id}</span>
+                    <span className="client-meta">{item.vendedor_nome || "—"}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {vendorBreakdownOpen && (
         <div
           className="modal-overlay"

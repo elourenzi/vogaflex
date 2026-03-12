@@ -13,4 +13,9 @@ urlpatterns = [
         views.dashboard_stage_stratification_api,
         name="dashboard_stage_stratification_api",
     ),
+    path(
+        "api/dashboard/dead/",
+        views.dead_conversations_api,
+        name="dead_conversations_api",
+    ),
 ]

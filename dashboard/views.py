@@ -1804,5 +1804,99 @@ def dashboard_api(request):
         return JsonResponse({"error": str(exc)}, status=500)
 
 
+def dead_conversations_api(request):
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
+    vendedor = request.GET.get("vendedor")
+
+    where_clauses = ["c.chat_id IS NOT NULL"]
+    params = []
+    if date_from:
+        where_clauses.append(
+            "(COALESCE(c.start_time, c.created_at) AT TIME ZONE 'America/Sao_Paulo')::date >= %s::date"
+        )
+        params.append(date_from)
+    if date_to:
+        where_clauses.append(
+            "(COALESCE(c.start_time, c.created_at) AT TIME ZONE 'America/Sao_Paulo')::date <= %s::date"
+        )
+        params.append(date_to)
+    if vendedor and vendedor != "Todos":
+        where_clauses.append("c.attendant_name = %s")
+        params.append(vendedor)
+
+    where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    unified_base_sql = """
+      SELECT DISTINCT ON (chat_id)
+        chat_id, contact_name, attendant_name,
+        current_funnel_stage, start_time, end_time, created_at, updated_at
+      FROM (
+        SELECT
+          sc.chat_id::text AS chat_id,
+          sc.contact_name,
+          sc.attendant_name,
+          sc.status AS current_funnel_stage,
+          sc.chat_created_at AS start_time,
+          CASE WHEN sc.status IN ('finished', 'closed') THEN sc.chat_updated_at ELSE NULL END AS end_time,
+          sc.inserted_at AS created_at,
+          sc.refreshed_at AS updated_at,
+          0 AS _src
+        FROM smclick_chat sc
+        WHERE sc.chat_id IS NOT NULL
+        UNION ALL
+        SELECT
+          c.chat_id, c.contact_name, c.attendant_name,
+          c.current_funnel_stage, c.start_time, c.end_time,
+          c.created_at, c.updated_at,
+          1 AS _src
+        FROM conversations c
+        WHERE c.chat_id IS NOT NULL
+      ) u
+      ORDER BY chat_id, _src ASC, COALESCE(start_time, created_at) DESC NULLS LAST
+    """
+
+    query = f"""
+        WITH filtered AS (
+          SELECT DISTINCT ON (c.chat_id) c.*
+          FROM ({unified_base_sql}) c
+          {where_sql}
+          ORDER BY c.chat_id, COALESCE(c.start_time, c.created_at) DESC NULLS LAST
+        ),
+        message_stats AS (
+          SELECT chat_id,
+                 SUM(CASE WHEN outbound THEN 1 ELSE 0 END) AS outbound_count
+          FROM (
+            SELECT m.chat_id, (m.from_client = false) AS outbound
+            FROM messages m JOIN filtered f ON f.chat_id = m.chat_id
+            UNION ALL
+            SELECT sm.chat_id::text,
+                   (sm.from_me = true AND sm.sent_by_name IS NOT NULL) AS outbound
+            FROM smclick_message sm JOIN filtered f ON f.chat_id = sm.chat_id::text
+          ) _ms
+          GROUP BY chat_id
+        )
+        SELECT
+          f.chat_id,
+          f.contact_name AS cliente_nome,
+          f.attendant_name AS vendedor_nome,
+          COALESCE(f.updated_at, f.created_at, f.start_time) AS last_seen
+        FROM filtered f
+        LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
+        WHERE COALESCE(ms.outbound_count, 0) = 0
+        ORDER BY last_seen DESC NULLS LAST
+        LIMIT 300
+    """
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(query, params)
+            columns = [col[0] for col in cursor.description]
+            rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return JsonResponse({"conversations": rows})
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+
 def index(request):
     return render(request, "dashboard/index.html", {"debug": settings.DEBUG})
