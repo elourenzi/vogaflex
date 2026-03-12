@@ -691,7 +691,7 @@ def dashboard_api(request):
       SELECT DISTINCT ON (chat_id)
         chat_id, contact_name, attendant_name, department_name,
         current_funnel_stage, start_time, end_time, created_at, updated_at,
-        budget_value, contact_reason, instance_id
+        budget_value, contact_reason, instance_id, ai_agent_rating
       FROM (
         SELECT
           sc.chat_id::text AS chat_id,
@@ -706,6 +706,7 @@ def dashboard_api(request):
           sc.budget_value,
           NULL::text AS contact_reason,
           NULL::text AS instance_id,
+          NULL::text AS ai_agent_rating,
           0 AS _src
         FROM smclick_chat sc
         WHERE sc.chat_id IS NOT NULL
@@ -720,6 +721,7 @@ def dashboard_api(request):
           c.current_funnel_stage, c.start_time, c.end_time,
           c.created_at, c.updated_at, c.budget_value, c.contact_reason,
           c.instance_id::text AS instance_id,
+          c.ai_agent_rating::text AS ai_agent_rating,
           1 AS _src
         FROM conversations c
         WHERE c.chat_id IS NOT NULL
