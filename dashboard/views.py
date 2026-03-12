@@ -8,11 +8,13 @@ STAGE_STRATIFICATION_ORDER = [
     ("triagem", "Triagem"),
     ("em_atendimento", "Em atendimento"),
     ("ativo", "Ativo"),
+    ("cadastro", "Cadastro"),
     ("chamada_1", "1ª chamada"),
     ("chamada_2", "2ª chamada"),
     ("chamada_3", "3ª chamada"),
     ("proposta_enviada", "Proposta enviada"),
     ("pos_vendas", "Pós-vendas"),
+    ("finalizado", "Finalizado"),
     ("lixo", "Lixo"),
 ]
 
@@ -490,6 +492,7 @@ def dashboard_stage_stratification_api(request):
             NULLIF(BTRIM(COALESCE(src.j->>'cliente_telefone', src.j->>'customer_phone', src.j->>'contact_phone', src.j#>>'{{contact,telephone}}', src.j#>>'{{infos,chat,contact,telephone}}', '')), '') AS cliente_telefone,
             NULLIF(BTRIM(COALESCE(src.j->>'vendedor_nome', src.j->>'attendant_name', src.j->>'current_attendant_name', src.j#>>'{{infos,message,sent_by,name}}', '')), '') AS vendedor_nome,
             NULLIF(BTRIM(COALESCE(src.j->>'etapa_funil_atual', src.j->>'etapa_funil', src.j->>'funnel_stage', src.j->>'current_funnel_stage', src.j->>'coluna_kanban', src.j->>'kanban_column', src.j#>>'{{infos,chat,crm_column,name}}', '')), '') AS stage_raw,
+            NULLIF(BTRIM(COALESCE(src.j->>'status', src.j->>'status_conversa', '')), '') AS status_raw,
             CASE
               WHEN NULLIF(BTRIM(COALESCE(src.j->>'updated_at', src.j->>'ultima_atualizacao', src.j->>'evento_timestamp', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,updated_at}}', '')), '') ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}'
                 THEN NULLIF(BTRIM(COALESCE(src.j->>'updated_at', src.j->>'ultima_atualizacao', src.j->>'evento_timestamp', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,updated_at}}', '')), '')::timestamptz
@@ -529,12 +532,22 @@ def dashboard_stage_stratification_api(request):
               WHEN stage_norm IN ('screening', 'triagem') THEN 'triagem'
               WHEN stage_norm IN ('em atendimento') THEN 'em_atendimento'
               WHEN stage_norm IN ('active', 'ativo') THEN 'ativo'
+              WHEN stage_norm IN ('cadastro') THEN 'cadastro'
+              WHEN stage_norm IN ('contato feito') THEN 'chamada_1'
               WHEN stage_norm ~ '^1[aª]? ?chamada$' THEN 'chamada_1'
+              WHEN stage_norm IN ('contato feito 2') THEN 'chamada_2'
               WHEN stage_norm ~ '^2[aª]? ?chamada$' THEN 'chamada_2'
               WHEN stage_norm ~ '^3[aª]? ?chamada$' THEN 'chamada_3'
               WHEN stage_norm IN ('proposta enviada') THEN 'proposta_enviada'
-              WHEN stage_norm IN ('pos-vendas', 'pos vendas', 'posvendas', 'pos-venda', 'pos venda') THEN 'pos_vendas'
+              WHEN stage_norm IN ('pos-vendas', 'pos vendas', 'posvendas', 'pos-venda', 'pos venda', 'recompra') THEN 'pos_vendas'
+              WHEN stage_norm IN ('finalizado') THEN 'finalizado'
               WHEN stage_norm IN ('lixo') THEN 'lixo'
+              WHEN stage_norm = '' THEN
+                CASE
+                  WHEN status_norm IN ('active', 'ativo') THEN 'ativo'
+                  WHEN status_norm IN ('waiting', 'aguardando', 'em espera') THEN 'aguardando'
+                  ELSE 'triagem'
+                END
               ELSE NULL
             END AS stage_key,
             CASE
@@ -542,12 +555,22 @@ def dashboard_stage_stratification_api(request):
               WHEN stage_norm IN ('screening', 'triagem') THEN 2
               WHEN stage_norm IN ('em atendimento') THEN 3
               WHEN stage_norm IN ('active', 'ativo') THEN 4
-              WHEN stage_norm ~ '^1[aª]? ?chamada$' THEN 5
-              WHEN stage_norm ~ '^2[aª]? ?chamada$' THEN 6
-              WHEN stage_norm ~ '^3[aª]? ?chamada$' THEN 7
-              WHEN stage_norm IN ('proposta enviada') THEN 8
-              WHEN stage_norm IN ('pos-vendas', 'pos vendas', 'posvendas', 'pos-venda', 'pos venda') THEN 9
-              WHEN stage_norm IN ('lixo') THEN 10
+              WHEN stage_norm IN ('cadastro') THEN 5
+              WHEN stage_norm IN ('contato feito') THEN 6
+              WHEN stage_norm ~ '^1[aª]? ?chamada$' THEN 6
+              WHEN stage_norm IN ('contato feito 2') THEN 7
+              WHEN stage_norm ~ '^2[aª]? ?chamada$' THEN 7
+              WHEN stage_norm ~ '^3[aª]? ?chamada$' THEN 8
+              WHEN stage_norm IN ('proposta enviada') THEN 9
+              WHEN stage_norm IN ('pos-vendas', 'pos vendas', 'posvendas', 'pos-venda', 'pos venda', 'recompra') THEN 10
+              WHEN stage_norm IN ('finalizado') THEN 11
+              WHEN stage_norm IN ('lixo') THEN 12
+              WHEN stage_norm = '' THEN
+                CASE
+                  WHEN status_norm IN ('active', 'ativo') THEN 4
+                  WHEN status_norm IN ('waiting', 'aguardando', 'em espera') THEN 1
+                  ELSE 2
+                END
               ELSE NULL
             END AS stage_order
           FROM (
@@ -557,7 +580,12 @@ def dashboard_stage_stratification_api(request):
                 lower(BTRIM(COALESCE(f.stage_raw, ''))),
                 'áàâãäéèêëíìîïóòôõöúùûüç',
                 'aaaaaeeeeiiiiooooouuuuc'
-              ) AS stage_norm
+              ) AS stage_norm,
+              translate(
+                lower(BTRIM(COALESCE(f.status_raw, ''))),
+                'áàâãäéèêëíìîïóòôõöúùûüç',
+                'aaaaaeeeeiiiiooooouuuuc'
+              ) AS status_norm
             FROM filtered f
           ) f
         )
