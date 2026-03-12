@@ -785,24 +785,40 @@ def dashboard_api(request):
           {filtered_base_sql}
         ),
         bot_events AS (
-          SELECT
-            m.chat_id,
-            MIN(m."timestamp") AS bot_transfer_ts
-          FROM messages m
-          JOIN filtered f ON f.chat_id = m.chat_id
-          WHERE m.from_client = false
-            AND m.content IS NOT NULL
-            AND (
-              m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-              OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-              OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-              OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-              OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-              OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-              OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-              OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
-            )
-          GROUP BY m.chat_id
+          SELECT chat_id, MIN(bot_ts) AS bot_transfer_ts
+          FROM (
+            SELECT m.chat_id, m."timestamp" AS bot_ts
+            FROM messages m
+            JOIN filtered f ON f.chat_id = m.chat_id
+            WHERE m.from_client = false AND m.content IS NOT NULL
+              AND (
+                m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
+              )
+            UNION ALL
+            SELECT sm.chat_id::text, sm.event_time AS bot_ts
+            FROM smclick_message sm
+            JOIN filtered f ON f.chat_id = sm.chat_id::text
+            WHERE sm.from_me = true AND sm.sent_by_name IS NULL
+              AND sm.content_text IS NOT NULL
+              AND (
+                sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                OR sm.content_text ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                OR sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                OR sm.content_text ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                OR sm.content_text ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                OR sm.content_text ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                OR sm.content_text ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                OR sm.content_text ILIKE '%%atendimento ao nosso setor de vendas.%%'
+              )
+          ) _be
+          GROUP BY chat_id
         ),
         conversation_times AS (
           SELECT
@@ -1024,33 +1040,54 @@ def dashboard_api(request):
                   {owners_join_sql}
                 ),
                 message_stats AS (
-                  SELECT
-                    m.chat_id,
-                    SUM(CASE WHEN m.from_client = false THEN 1 ELSE 0 END) AS outbound_count,
-                    SUM(CASE WHEN m.from_client = true THEN 1 ELSE 0 END) AS inbound_count
-                  FROM messages m
-                  JOIN filtered f ON f.chat_id = m.chat_id
-                  GROUP BY m.chat_id
+                  SELECT chat_id,
+                         SUM(CASE WHEN outbound THEN 1 ELSE 0 END) AS outbound_count,
+                         SUM(CASE WHEN NOT outbound THEN 1 ELSE 0 END) AS inbound_count
+                  FROM (
+                    SELECT m.chat_id, (m.from_client = false) AS outbound
+                    FROM messages m JOIN filtered f ON f.chat_id = m.chat_id
+                    UNION ALL
+                    SELECT sm.chat_id::text,
+                           (sm.from_me = true AND sm.sent_by_name IS NOT NULL) AS outbound
+                    FROM smclick_message sm JOIN filtered f ON f.chat_id = sm.chat_id::text
+                  ) _ms
+                  GROUP BY chat_id
                 ),
                 bot_events AS (
-                  SELECT
-                    m.chat_id,
-                    MIN(m."timestamp") AS bot_transfer_ts
-                  FROM messages m
-                  JOIN filtered f ON f.chat_id = m.chat_id
-                  WHERE m.from_client = false
-                    AND m.content IS NOT NULL
-                    AND (
-                      m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                      OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                      OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                    )
-                  GROUP BY m.chat_id
+                  SELECT chat_id, MIN(bot_ts) AS bot_transfer_ts
+                  FROM (
+                    SELECT m.chat_id, m."timestamp" AS bot_ts
+                    FROM messages m
+                    JOIN filtered f ON f.chat_id = m.chat_id
+                    WHERE m.from_client = false AND m.content IS NOT NULL
+                      AND (
+                        m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
+                      )
+                    UNION ALL
+                    SELECT sm.chat_id::text, sm.event_time AS bot_ts
+                    FROM smclick_message sm
+                    JOIN filtered f ON f.chat_id = sm.chat_id::text
+                    WHERE sm.from_me = true AND sm.sent_by_name IS NULL
+                      AND sm.content_text IS NOT NULL
+                      AND (
+                        sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR sm.content_text ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%atendimento ao nosso setor de vendas.%%'
+                      )
+                  ) _be
+                  GROUP BY chat_id
                 )
                 SELECT
                   COUNT(*) FILTER (WHERE b.bot_transfer_ts IS NULL) AS total_contacts,
@@ -1115,32 +1152,53 @@ def dashboard_api(request):
                   {owners_join_sql}
                 ),
                 message_stats AS (
-                  SELECT
-                    m.chat_id,
-                    SUM(CASE WHEN m.from_client = false THEN 1 ELSE 0 END) AS outbound_count
-                  FROM messages m
-                  JOIN filtered f ON f.chat_id = m.chat_id
-                  GROUP BY m.chat_id
+                  SELECT chat_id,
+                         SUM(CASE WHEN outbound THEN 1 ELSE 0 END) AS outbound_count
+                  FROM (
+                    SELECT m.chat_id, (m.from_client = false) AS outbound
+                    FROM messages m JOIN filtered f ON f.chat_id = m.chat_id
+                    UNION ALL
+                    SELECT sm.chat_id::text,
+                           (sm.from_me = true AND sm.sent_by_name IS NOT NULL) AS outbound
+                    FROM smclick_message sm JOIN filtered f ON f.chat_id = sm.chat_id::text
+                  ) _ms
+                  GROUP BY chat_id
                 ),
                 bot_events AS (
-                  SELECT
-                    m.chat_id,
-                    MIN(m."timestamp") AS bot_transfer_ts
-                  FROM messages m
-                  JOIN filtered f ON f.chat_id = m.chat_id
-                  WHERE m.from_client = false
-                    AND m.content IS NOT NULL
-                    AND (
-                      m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                      OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                      OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                    )
-                  GROUP BY m.chat_id
+                  SELECT chat_id, MIN(bot_ts) AS bot_transfer_ts
+                  FROM (
+                    SELECT m.chat_id, m."timestamp" AS bot_ts
+                    FROM messages m
+                    JOIN filtered f ON f.chat_id = m.chat_id
+                    WHERE m.from_client = false AND m.content IS NOT NULL
+                      AND (
+                        m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
+                      )
+                    UNION ALL
+                    SELECT sm.chat_id::text, sm.event_time AS bot_ts
+                    FROM smclick_message sm
+                    JOIN filtered f ON f.chat_id = sm.chat_id::text
+                    WHERE sm.from_me = true AND sm.sent_by_name IS NULL
+                      AND sm.content_text IS NOT NULL
+                      AND (
+                        sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR sm.content_text ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%atendimento ao nosso setor de vendas.%%'
+                      )
+                  ) _be
+                  GROUP BY chat_id
                 )
                 SELECT
                   date_trunc('day', COALESCE(f.start_time, f.created_at) AT TIME ZONE 'America/Sao_Paulo')::date AS day,
@@ -1205,24 +1263,40 @@ def dashboard_api(request):
                   {owners_join_sql}
                 ),
                 bot_events AS (
-                  SELECT
-                    m.chat_id,
-                    MIN(m."timestamp") AS bot_transfer_ts
-                  FROM messages m
-                  JOIN filtered f ON f.chat_id = m.chat_id
-                  WHERE m.from_client = false
-                    AND m.content IS NOT NULL
-                    AND (
-                      m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                      OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                      OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                    )
-                  GROUP BY m.chat_id
+                  SELECT chat_id, MIN(bot_ts) AS bot_transfer_ts
+                  FROM (
+                    SELECT m.chat_id, m."timestamp" AS bot_ts
+                    FROM messages m
+                    JOIN filtered f ON f.chat_id = m.chat_id
+                    WHERE m.from_client = false AND m.content IS NOT NULL
+                      AND (
+                        m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
+                      )
+                    UNION ALL
+                    SELECT sm.chat_id::text, sm.event_time AS bot_ts
+                    FROM smclick_message sm
+                    JOIN filtered f ON f.chat_id = sm.chat_id::text
+                    WHERE sm.from_me = true AND sm.sent_by_name IS NULL
+                      AND sm.content_text IS NOT NULL
+                      AND (
+                        sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR sm.content_text ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%atendimento ao nosso setor de vendas.%%'
+                      )
+                  ) _be
+                  GROUP BY chat_id
                 )
                 SELECT
                   date_trunc('day', b.bot_transfer_ts AT TIME ZONE 'America/Sao_Paulo')::date AS day,
@@ -1357,32 +1431,53 @@ def dashboard_api(request):
                   GROUP BY src.chat_id
                 ),
                 bot_events AS (
-                  SELECT
-                    m.chat_id,
-                    MIN(m."timestamp") AS bot_transfer_ts
-                  FROM messages m
-                  JOIN filtered f ON f.chat_id = m.chat_id
-                  WHERE m.from_client = false
-                    AND m.content IS NOT NULL
-                    AND (
-                      m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                      OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                      OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                      OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                    )
-                  GROUP BY m.chat_id
+                  SELECT chat_id, MIN(bot_ts) AS bot_transfer_ts
+                  FROM (
+                    SELECT m.chat_id, m."timestamp" AS bot_ts
+                    FROM messages m
+                    JOIN filtered f ON f.chat_id = m.chat_id
+                    WHERE m.from_client = false AND m.content IS NOT NULL
+                      AND (
+                        m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                        OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
+                      )
+                    UNION ALL
+                    SELECT sm.chat_id::text, sm.event_time AS bot_ts
+                    FROM smclick_message sm
+                    JOIN filtered f ON f.chat_id = sm.chat_id::text
+                    WHERE sm.from_me = true AND sm.sent_by_name IS NULL
+                      AND sm.content_text IS NOT NULL
+                      AND (
+                        sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR sm.content_text ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
+                        OR sm.content_text ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
+                        OR sm.content_text ILIKE '%%atendimento ao nosso setor de vendas.%%'
+                      )
+                  ) _be
+                  GROUP BY chat_id
                 ),
                 message_stats AS (
-                  SELECT
-                    m.chat_id,
-                    SUM(CASE WHEN m.from_client = false THEN 1 ELSE 0 END) AS outbound_count
-                  FROM messages m
-                  JOIN filtered f ON f.chat_id = m.chat_id
-                  GROUP BY m.chat_id
+                  SELECT chat_id,
+                         SUM(CASE WHEN outbound THEN 1 ELSE 0 END) AS outbound_count
+                  FROM (
+                    SELECT m.chat_id, (m.from_client = false) AS outbound
+                    FROM messages m JOIN filtered f ON f.chat_id = m.chat_id
+                    UNION ALL
+                    SELECT sm.chat_id::text,
+                           (sm.from_me = true AND sm.sent_by_name IS NOT NULL) AS outbound
+                    FROM smclick_message sm JOIN filtered f ON f.chat_id = sm.chat_id::text
+                  ) _ms
+                  GROUP BY chat_id
                 ),
                 conversation_times AS (
                   SELECT
