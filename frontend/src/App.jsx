@@ -1896,17 +1896,6 @@ function AppContent({ onLogout }) {
                                         <span className="stage-timeline-label">
                                           {stage.label}
                                         </span>
-                                        <span className="stage-timeline-vendors">
-                                          {(stage.vendors || [])
-                                            .slice(0, 1)
-                                            .map(
-                                              (vendor) =>
-                                                `${vendor.vendedor}: ${formatCount(
-                                                  vendor.total
-                                                )}`
-                                            )
-                                            .join(" · ") || "Sem vendedor"}
-                                        </span>
                                       </button>
                                     );
                                   })}
