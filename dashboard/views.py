@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.cache import cache
 from django.db import connection
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -680,6 +681,11 @@ def dashboard_api(request):
     date_from = request.GET.get("date_from")
     date_to = request.GET.get("date_to")
     vendedor = request.GET.get("vendedor")
+
+    _cache_key = f"dash_{date_from}_{date_to}_{vendedor or ''}_{status or ''}_{etapa or ''}"
+    _cached = cache.get(_cache_key)
+    if _cached is not None:
+        return JsonResponse(_cached)
 
     where_clauses = ["c.chat_id IS NOT NULL"]
     params = []
@@ -1394,7 +1400,45 @@ def dashboard_api(request):
               )
             """
 
-            vendor_summary_query = f"""
+            # Primary load (no vendor selected): use a lightweight query that only
+            # counts contacts per vendor — no budget CTEs, no TMA/TME lateral joins.
+            # Full query runs only for the vendor-specific call (~400 conversations).
+            include_tma_tme = bool(vendedor and vendedor != "Todos")
+
+            if not include_tma_tme:
+                vendor_summary_query = f"""
+                    WITH filtered_base AS (
+                      {filtered_base_sql}
+                    ),
+                    filtered AS (
+                      SELECT fb.*,
+                        translate(lower(COALESCE(fb.contact_reason, '')),
+                          'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc'
+                        ) AS reason_norm
+                      FROM filtered_base fb
+                    )
+                    SELECT
+                      f.attendant_name AS vendedor,
+                      COUNT(*) FILTER (
+                        WHERE LOWER(COALESCE(f.current_funnel_stage, '')) NOT IN
+                          ('finalizado', 'finished', 'closed', 'lixo')
+                      ) AS contacts_received,
+                      0 AS budgets_count,
+                      0 AS budgets_detected_count,
+                      0::float AS budgets_sum,
+                      0::float AS budgets_sum_detected,
+                      0 AS dead_contacts,
+                      0::float AS avg_duration_seconds,
+                      0::float AS avg_handoff_seconds,
+                      0::float AS avg_score
+                    FROM filtered f
+                    WHERE f.attendant_name IS NOT NULL
+                      AND NOT ({sdr_attendant_exclude_sql})
+                    GROUP BY f.attendant_name
+                    ORDER BY contacts_received DESC;
+                """
+            else:
+                vendor_summary_query = f"""
                 WITH filtered_base AS (
                   {filtered_base_sql}
                 ),
@@ -1791,7 +1835,6 @@ def dashboard_api(request):
                     )::numeric
                   ) AS avg_score
                 FROM filtered f
-                LEFT JOIN bot_events b ON b.chat_id = f.chat_id
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
                 LEFT JOIN structured_budget_values sbv ON sbv.chat_id = f.chat_id
                 LEFT JOIN budget_values bv ON bv.chat_id_txt = f.chat_id::text
@@ -1893,30 +1936,31 @@ def dashboard_api(request):
                     {"score": score, "total": total}
                 )
 
-        return JsonResponse(
-            {
-                "stats": stats,
-                "stage_counts": stage_counts,
-                "contacts_breakdown": {
-                    "total": contacts_total,
-                    "active": contacts_active,
-                    "pending": contacts_pending,
-                    "finalized": contacts_finalized,
-                    "other": contacts_other,
-                    "stages": contacts_stages,
-                },
-                "sdr": {
-                    "summary": sdr_summary,
-                    "daily": sdr_daily,
-                    "transferred_daily": sdr_transferred_daily,
-                    "members": sdr_members,
-                },
-                "vendors": {
-                    "summary": vendors,
-                    "scores": vendor_scores,
-                },
-            }
-        )
+        _response_data = {
+            "stats": stats,
+            "stage_counts": stage_counts,
+            "contacts_breakdown": {
+                "total": contacts_total,
+                "active": contacts_active,
+                "pending": contacts_pending,
+                "finalized": contacts_finalized,
+                "other": contacts_other,
+                "stages": contacts_stages,
+            },
+            "sdr": {
+                "summary": sdr_summary,
+                "daily": sdr_daily,
+                "transferred_daily": sdr_transferred_daily,
+                "members": sdr_members,
+            },
+            "vendors": {
+                "summary": vendors,
+                "scores": vendor_scores,
+            },
+        }
+        _cache_ttl = 60 if (vendedor and vendedor != "Todos") else 180
+        cache.set(_cache_key, _response_data, timeout=_cache_ttl)
+        return JsonResponse(_response_data)
     except Exception as exc:
         return JsonResponse({"error": str(exc)}, status=500)
 

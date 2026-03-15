@@ -445,6 +445,7 @@ function AppContent({ onLogout }) {
   const [alertsData, setAlertsData] = useState(null);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [alertModalKey, setAlertModalKey] = useState(null);
+  const [selectedVendorFullData, setSelectedVendorFullData] = useState(null);
 
   const loadConversations = async () => {
     const params = new URLSearchParams();
@@ -787,12 +788,15 @@ function AppContent({ onLogout }) {
     }
     if (!dashboardVendor) return () => {};
     setVendorBreakdownLoading(true);
+    setSelectedVendorFullData(null);
     fetch(`/api/dashboard/?${buildDashboardParams({ vendedor: dashboardVendor })}`)
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         if (!active) return;
         if (!ok) throw new Error(data.error || "Erro ao carregar estratificação");
         setVendorBreakdown(data.contacts_breakdown || null);
+        const fullStats = data.vendors?.summary?.[0] || null;
+        setSelectedVendorFullData(fullStats);
       })
       .catch((err) => {
         if (!active) return;
@@ -942,6 +946,12 @@ function AppContent({ onLogout }) {
   const selectedVendorData = vendorList.find(
     (item) => item.vendedor === dashboardVendor
   );
+
+  // Merge lite data (sidebar) with full data (loaded after vendor selection).
+  // selectedVendorFullData has TMA/TME/budgets; selectedVendorData has contacts_received.
+  const selectedVendorMerged = selectedVendorData
+    ? { ...selectedVendorData, ...(selectedVendorFullData || {}) }
+    : null;
 
   const contactsBreakdownStages = vendorBreakdown?.stages || [];
   const contactsBreakdownTotal =
@@ -1856,23 +1866,23 @@ function AppContent({ onLogout }) {
                           </p>
                         </div>
                         <div className="vendor-detail">
-                          {!selectedVendorData ? (
+                          {!selectedVendorMerged ? (
                             <p className="empty">Selecione um vendedor.</p>
                           ) : (
                             <>
                               <div className="vendor-header">
-                                <h3>{selectedVendorData.vendedor}</h3>
+                                <h3>{selectedVendorMerged.vendedor}</h3>
                                 <span className="tag">
-                                  {formatCount(selectedVendorData.contacts_received)} contatos líquidos
+                                  {formatCount(selectedVendorMerged.contacts_received)} contatos líquidos
                                 </span>
                               </div>
                               {(() => {
-                                const recebidos    = selectedVendorData.contacts_received || 0;
-                                const morreram     = selectedVendorData.dead_contacts || 0;
+                                const recebidos    = selectedVendorMerged.contacts_received || 0;
+                                const morreram     = selectedVendorMerged.dead_contacts || 0;
                                 const comInteracao = Math.max(0, recebidos - morreram);
-                                const propostas    = selectedVendorData.budgets_detected_count || selectedVendorData.budgets_count || 0;
-                                const parados      = alertsData?.sem_retorno_2d?.filter(c => c.vendedor_nome === selectedVendorData.vendedor)?.length ?? null;
-                                const semFollowup  = alertsData?.orcamento_sem_followup?.filter(c => c.vendedor_nome === selectedVendorData.vendedor)?.length ?? null;
+                                const propostas    = selectedVendorMerged.budgets_detected_count || selectedVendorMerged.budgets_count || 0;
+                                const parados      = alertsData?.sem_retorno_2d?.filter(c => c.vendedor_nome === selectedVendorMerged.vendedor)?.length ?? null;
+                                const semFollowup  = alertsData?.orcamento_sem_followup?.filter(c => c.vendedor_nome === selectedVendorMerged.vendedor)?.length ?? null;
                                 const steps = [
                                   { label: "Contatos recebidos",     value: recebidos,    perda: null, note: "Base líquida" },
                                   { label: "Contatos c/ interação",  value: comInteracao, perda: formatPercent(recebidos - comInteracao, recebidos), note: "Sem interação" },
@@ -1907,7 +1917,7 @@ function AppContent({ onLogout }) {
                                   <p className="stat-label">TMA</p>
                                   <p className="stat-value">
                                     {formatDuration(
-                                      selectedVendorData.avg_duration_seconds || 0
+                                      selectedVendorMerged.avg_duration_seconds || 0
                                     )}
                                   </p>
                                   <p className="stat-foot">Tempo médio</p>
@@ -1916,7 +1926,7 @@ function AppContent({ onLogout }) {
                                   <p className="stat-label">TME</p>
                                   <p className="stat-value">
                                     {formatDuration(
-                                      selectedVendorData.avg_handoff_seconds || 0
+                                      selectedVendorMerged.avg_handoff_seconds || 0
                                     )}
                                   </p>
                                   <p className="stat-foot">Tempo de espera</p>
@@ -1924,14 +1934,14 @@ function AppContent({ onLogout }) {
                                 <article className="metric-card">
                                   <p className="stat-label">Score IA</p>
                                   <p className="stat-value">
-                                    {formatScore(selectedVendorData.avg_score || 0)}
+                                    {formatScore(selectedVendorMerged.avg_score || 0)}
                                   </p>
                                   <p className="stat-foot">Média 0–10</p>
                                 </article>
                                 <article className="metric-card">
                                   <p className="stat-label">Somatória orçada (registrado)</p>
                                   <p className="stat-value">
-                                    {formatCurrency(selectedVendorData.budgets_sum || 0)}
+                                    {formatCurrency(selectedVendorMerged.budgets_sum || 0)}
                                   </p>
                                   <p className="stat-foot">Valor total</p>
                                 </article>
@@ -1939,7 +1949,7 @@ function AppContent({ onLogout }) {
                                   <p className="stat-label">Somatória orçada (mensagens)</p>
                                   <p className="stat-value">
                                     {formatCurrency(
-                                      selectedVendorData.budgets_sum_detected || 0
+                                      selectedVendorMerged.budgets_sum_detected || 0
                                     )}
                                   </p>
                                   <p className="stat-foot">Não registrado no CRM</p>
@@ -2264,7 +2274,7 @@ function AppContent({ onLogout }) {
               <div>
                 <p className="stat-label">Estratificação de contatos</p>
                 <p className="stat-foot">
-                  {selectedVendorData?.vendedor || "Vendedor"} · Base líquida{" "}
+                  {selectedVendorMerged?.vendedor || "Vendedor"} · Base líquida{" "}
                   {formatCount(contactsBreakdownTotal)}
                 </p>
               </div>
