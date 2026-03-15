@@ -1957,8 +1957,9 @@ def alerts_api(request):
         {where_sql}
         ORDER BY c.chat_id, COALESCE(c.start_time, c.created_at) DESC NULLS LAST
       ),
-      last_vendor AS (
-        SELECT chat_id::text AS chat_id, MAX(event_time) AS ts
+      -- Handoff: first human vendor message per chat (sent_by_name populated OR *Name* pattern)
+      handoff_ts AS (
+        SELECT chat_id::text AS chat_id, MIN(event_time) AS ts
         FROM smclick_message
         WHERE from_me = true
           AND (
@@ -1967,32 +1968,42 @@ def alerts_api(request):
           )
         GROUP BY chat_id
       ),
+      -- After handoff, any from_me=true message belongs to the vendor
+      last_vendor AS (
+        SELECT sm.chat_id::text AS chat_id, MAX(sm.event_time) AS ts
+        FROM smclick_message sm
+        JOIN handoff_ts ht ON ht.chat_id = sm.chat_id::text
+        WHERE sm.from_me = true AND sm.event_time >= ht.ts
+        GROUP BY sm.chat_id
+      ),
+      -- Last message after handoff (client or vendor)
       last_msg AS (
-        SELECT DISTINCT ON (chat_id::text) chat_id::text AS chat_id, from_me, event_time
-        FROM smclick_message
-        ORDER BY chat_id, event_time DESC
+        SELECT DISTINCT ON (sm.chat_id::text)
+          sm.chat_id::text AS chat_id, sm.from_me, sm.event_time
+        FROM smclick_message sm
+        JOIN handoff_ts ht ON ht.chat_id = sm.chat_id::text
+        WHERE sm.event_time >= ht.ts
+        ORDER BY sm.chat_id, sm.event_time DESC
       ),
+      -- Last vendor media after handoff
       last_vendor_media AS (
-        SELECT DISTINCT ON (chat_id::text) chat_id::text AS chat_id, event_time AS media_ts
-        FROM smclick_message
-        WHERE from_me = true
-          AND (
-            sent_by_name IS NOT NULL
-            OR (content_text IS NOT NULL AND content_text ~ '^\*[^*]+\*')
-          )
-          AND message_type IN ('image','video','document','ptt','audio')
-        ORDER BY chat_id, event_time DESC
+        SELECT DISTINCT ON (sm.chat_id::text)
+          sm.chat_id::text AS chat_id, sm.event_time AS media_ts
+        FROM smclick_message sm
+        JOIN handoff_ts ht ON ht.chat_id = sm.chat_id::text
+        WHERE sm.from_me = true AND sm.event_time >= ht.ts
+          AND sm.message_type IN ('image','video','document','ptt','audio')
+        ORDER BY sm.chat_id, sm.event_time DESC
       ),
+      -- Vendor text message after last vendor media
       post_media_text AS (
         SELECT DISTINCT sm.chat_id::text AS chat_id
         FROM smclick_message sm
         JOIN last_vendor_media lm ON lm.chat_id = sm.chat_id::text
+        JOIN handoff_ts ht ON ht.chat_id = sm.chat_id::text
         WHERE sm.from_me = true
-          AND (
-            sm.sent_by_name IS NOT NULL
-            OR (sm.content_text IS NOT NULL AND sm.content_text ~ '^\*[^*]+\*')
-          )
           AND sm.event_time > lm.media_ts
+          AND sm.event_time >= ht.ts
           AND sm.message_type NOT IN ('image','video','document','ptt','audio')
           AND sm.content_text IS NOT NULL AND LENGTH(sm.content_text) > 5
       ),
