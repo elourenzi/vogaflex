@@ -2049,25 +2049,25 @@ def alerts_api(request):
       SELECT * FROM (
         SELECT 'sem_retorno_2d' AS alert_type, chat_id, cliente_nome, vendedor_nome,
                extra_int::text AS extra
-        FROM a_sem_retorno ORDER BY extra_int DESC LIMIT 200
+        FROM a_sem_retorno ORDER BY extra_int DESC
       ) _r1
       UNION ALL
       SELECT * FROM (
         SELECT 'aguardando_resposta', chat_id, cliente_nome, vendedor_nome,
                TO_CHAR(desde AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI')
-        FROM a_aguardando ORDER BY desde ASC LIMIT 200
+        FROM a_aguardando ORDER BY desde ASC
       ) _r2
       UNION ALL
       SELECT * FROM (
         SELECT 'midia_sem_info', chat_id, cliente_nome, vendedor_nome,
                TO_CHAR(media_ts AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI')
-        FROM a_midia_sem_info ORDER BY media_ts DESC LIMIT 200
+        FROM a_midia_sem_info ORDER BY media_ts DESC
       ) _r3
       UNION ALL
       SELECT * FROM (
         SELECT 'orcamento_sem_followup', chat_id, cliente_nome, vendedor_nome,
                extra_int::text
-        FROM a_orcamento_sem_followup ORDER BY extra_int DESC LIMIT 200
+        FROM a_orcamento_sem_followup ORDER BY extra_int DESC
       ) _r4
     """
 
