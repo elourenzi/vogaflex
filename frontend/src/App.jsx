@@ -1812,10 +1812,10 @@ function AppContent({ onLogout }) {
                         ) : (
                           <div className="alerts-grid">
                             {[
-                              { key: "sem_retorno_2d", label: "Sem retorno +2 dias", desc: "Ativo sem mensagem do vendedor" },
-                              { key: "aguardando_resposta", label: "Aguardando resposta", desc: "Cliente sem retorno do vendedor" },
-                              { key: "midia_sem_info", label: "Midia sem informacao", desc: "Foto/video sem texto de apoio" },
-                              { key: "orcamento_sem_followup", label: "Orcamento sem follow-up", desc: "Orcamento enviado, sem retorno +2d" },
+                              { key: "sem_retorno_2d", label: "Parado há +2 dias", desc: "Vendedor não contata há mais de 2 dias" },
+                              { key: "aguardando_resposta", label: "Cliente sem resposta", desc: "Última mensagem da conversa é do cliente" },
+                              { key: "midia_sem_info", label: "Mídia sem texto", desc: "Foto/vídeo enviado sem explicação" },
+                              { key: "orcamento_sem_followup", label: "Proposta sem follow-up", desc: "Orçamento registrado sem contato há +2 dias" },
                             ].map((alert) => {
                               const list = alertsData?.[alert.key] || [];
                               return (
@@ -2156,10 +2156,10 @@ function AppContent({ onLogout }) {
             <div className="modal-header">
               <div>
                 <p className="stat-label">
-                  {alertModalKey === "sem_retorno_2d" && "Sem retorno há +2 dias"}
-                  {alertModalKey === "aguardando_resposta" && "Aguardando resposta do vendedor"}
-                  {alertModalKey === "midia_sem_info" && "Mídia enviada sem informação"}
-                  {alertModalKey === "orcamento_sem_followup" && "Orçamento sem follow-up"}
+                  {alertModalKey === "sem_retorno_2d" && "Parado há +2 dias"}
+                  {alertModalKey === "aguardando_resposta" && "Cliente sem resposta"}
+                  {alertModalKey === "midia_sem_info" && "Mídia sem texto"}
+                  {alertModalKey === "orcamento_sem_followup" && "Proposta sem follow-up"}
                 </p>
                 <p className="stat-foot">
                   {(alertsData?.[alertModalKey] || []).length} conversa(s)
