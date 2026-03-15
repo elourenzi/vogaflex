@@ -1630,20 +1630,27 @@ h3 {
 /* ── Pipeline funnel ────────────────────────── */
 .pipeline-funnel {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  grid-template-columns: repeat(6, 1fr);
   gap: 8px;
+}
+
+/* Secondary row (TMA/TME/somas) after divider: 4 cols */
+.pipeline-divider ~ .pipeline-step {
+  /* inherits 1fr each, 4 items auto-fill the row */
 }
 
 .pipeline-step {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
   padding: 14px 14px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--surface);
   text-align: left;
   cursor: default;
+  min-height: 96px;
 }
 
 .pipeline-step.is-clickable {
@@ -1652,19 +1659,22 @@ h3 {
 }
 .pipeline-step.is-clickable:hover {
   background: var(--surface-hover);
-  border-color: var(--accent);
+  border-color: rgba(192, 84, 44, 0.5);
 }
 
 .pipeline-step.is-loss {
-  border-left: 3px solid rgba(192, 84, 44, 0.45);
+  background: rgba(192, 84, 44, 0.03);
+  border-color: rgba(192, 84, 44, 0.3);
+}
+.pipeline-step.is-loss:hover {
+  background: rgba(192, 84, 44, 0.07);
 }
 
 .pipeline-step-label {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  line-height: 1.3;
   margin: 0;
 }
 
@@ -1676,20 +1686,23 @@ h3 {
   margin: 0;
 }
 
+.pipeline-step.is-loss .pipeline-step-value {
+  color: #c0542c;
+}
+
 .pipeline-step-foot {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  flex-wrap: wrap;
   margin: 0;
 }
 
 .pipeline-step-perda {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   color: #c0542c;
-  background: rgba(192, 84, 44, 0.08);
-  border-radius: 4px;
-  padding: 1px 5px;
+  white-space: nowrap;
 }
 
 .pipeline-step-note {
@@ -1701,5 +1714,30 @@ h3 {
   grid-column: 1 / -1;
   height: 1px;
   background: var(--border);
-  margin: 4px 0;
+  margin: 6px 0;
+}
+
+@media (max-width: 900px) {
+  .pipeline-funnel {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .pipeline-funnel {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.pipeline-secondary-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .pipeline-secondary-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }

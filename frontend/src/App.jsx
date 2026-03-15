@@ -1785,26 +1785,27 @@ function AppContent({ onLogout }) {
                                   </Tag>
                                 );
                               })}
-                              <div className="pipeline-divider" />
-                              <div className="pipeline-step">
-                                <p className="pipeline-step-label">TMA</p>
-                                <p className="pipeline-step-value">{formatDuration(dashboardStats?.avg_duration_seconds || 0)}</p>
-                                <div className="pipeline-step-foot"><span className="pipeline-step-note">Tempo médio atendimento</span></div>
-                              </div>
-                              <div className="pipeline-step">
-                                <p className="pipeline-step-label">TME</p>
-                                <p className="pipeline-step-value">{formatDuration(dashboardStats?.avg_handoff_seconds || 0)}</p>
-                                <div className="pipeline-step-foot"><span className="pipeline-step-note">SLA bot → vendedor</span></div>
-                              </div>
-                              <div className="pipeline-step">
-                                <p className="pipeline-step-label">Somatória orçada</p>
-                                <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsSum)}</p>
-                                <div className="pipeline-step-foot"><span className="pipeline-step-note">Registrado no CRM</span></div>
-                              </div>
-                              <div className="pipeline-step">
-                                <p className="pipeline-step-label">Somatória (mensagens)</p>
-                                <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsSumDetected)}</p>
-                                <div className="pipeline-step-foot"><span className="pipeline-step-note">Não registrado no CRM</span></div>
+                              <div className="pipeline-secondary-row">
+                                <div className="pipeline-step">
+                                  <p className="pipeline-step-label">TMA</p>
+                                  <p className="pipeline-step-value">{formatDuration(dashboardStats?.avg_duration_seconds || 0)}</p>
+                                  <div className="pipeline-step-foot"><span className="pipeline-step-note">Tempo médio atendimento</span></div>
+                                </div>
+                                <div className="pipeline-step">
+                                  <p className="pipeline-step-label">TME</p>
+                                  <p className="pipeline-step-value">{formatDuration(dashboardStats?.avg_handoff_seconds || 0)}</p>
+                                  <div className="pipeline-step-foot"><span className="pipeline-step-note">SLA bot → vendedor</span></div>
+                                </div>
+                                <div className="pipeline-step">
+                                  <p className="pipeline-step-label">Somatória orçada</p>
+                                  <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsSum)}</p>
+                                  <div className="pipeline-step-foot"><span className="pipeline-step-note">Registrado no CRM</span></div>
+                                </div>
+                                <div className="pipeline-step">
+                                  <p className="pipeline-step-label">Somatória (mensagens)</p>
+                                  <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsSumDetected)}</p>
+                                  <div className="pipeline-step-foot"><span className="pipeline-step-note">Não registrado no CRM</span></div>
+                                </div>
                               </div>
                             </div>
                           );
