@@ -1680,25 +1680,66 @@ def dashboard_api(request):
                     GROUP BY sm.chat_id::text
                   ) _lm GROUP BY chat_id
                 ),
+                direct_handoff_business AS (
+                  SELECT
+                    f.chat_id,
+                    SUM(
+                      GREATEST(0, EXTRACT(EPOCH FROM (
+                        LEAST(fv.first_ts AT TIME ZONE 'America/Sao_Paulo', d.day_end)
+                        - GREATEST(COALESCE(f.start_time, f.created_at) AT TIME ZONE 'America/Sao_Paulo', d.day_start)
+                      )))
+                    ) AS handoff_seconds
+                  FROM filtered f
+                  JOIN first_vendor_msg fv ON fv.chat_id = f.chat_id
+                  JOIN LATERAL (
+                    SELECT
+                      day::timestamp + time '08:00' AS day_start,
+                      day::timestamp + time '18:00' AS day_end
+                    FROM generate_series(
+                      date_trunc('day', COALESCE(f.start_time, f.created_at) AT TIME ZONE 'America/Sao_Paulo'),
+                      date_trunc('day', fv.first_ts AT TIME ZONE 'America/Sao_Paulo'),
+                      interval '1 day'
+                    ) AS day
+                    WHERE EXTRACT(DOW FROM day) BETWEEN 1 AND 5
+                  ) d ON TRUE
+                  WHERE COALESCE(f.start_time, f.created_at) IS NOT NULL
+                    AND fv.first_ts IS NOT NULL
+                  GROUP BY f.chat_id
+                ),
+                direct_duration_business AS (
+                  SELECT
+                    f.chat_id,
+                    SUM(
+                      GREATEST(0, EXTRACT(EPOCH FROM (
+                        LEAST(COALESCE(f.end_time, lm.last_ts) AT TIME ZONE 'America/Sao_Paulo', d.day_end)
+                        - GREATEST(COALESCE(f.start_time, f.created_at) AT TIME ZONE 'America/Sao_Paulo', d.day_start)
+                      )))
+                    ) AS duration_seconds
+                  FROM filtered f
+                  JOIN last_msg_ts lm ON lm.chat_id = f.chat_id
+                  JOIN LATERAL (
+                    SELECT
+                      day::timestamp + time '08:00' AS day_start,
+                      day::timestamp + time '18:00' AS day_end
+                    FROM generate_series(
+                      date_trunc('day', COALESCE(f.start_time, f.created_at) AT TIME ZONE 'America/Sao_Paulo'),
+                      date_trunc('day', COALESCE(f.end_time, lm.last_ts) AT TIME ZONE 'America/Sao_Paulo'),
+                      interval '1 day'
+                    ) AS day
+                    WHERE EXTRACT(DOW FROM day) BETWEEN 1 AND 5
+                  ) d ON TRUE
+                  WHERE COALESCE(f.start_time, f.created_at) IS NOT NULL
+                    AND COALESCE(f.end_time, lm.last_ts) IS NOT NULL
+                  GROUP BY f.chat_id
+                ),
                 direct_metrics AS (
                   SELECT
                     f.chat_id,
-                    CASE
-                      WHEN fv.first_ts IS NOT NULL AND COALESCE(f.start_time, f.created_at) IS NOT NULL
-                      THEN GREATEST(0, EXTRACT(EPOCH FROM (fv.first_ts - COALESCE(f.start_time, f.created_at))))
-                      ELSE NULL
-                    END AS handoff_seconds,
-                    CASE
-                      WHEN COALESCE(f.start_time, f.created_at) IS NOT NULL
-                        AND COALESCE(f.end_time, lm.last_ts) IS NOT NULL
-                      THEN GREATEST(0, EXTRACT(EPOCH FROM (
-                        COALESCE(f.end_time, lm.last_ts) - COALESCE(f.start_time, f.created_at)
-                      )))
-                      ELSE NULL
-                    END AS duration_seconds
+                    dhb.handoff_seconds,
+                    ddb.duration_seconds
                   FROM filtered f
-                  LEFT JOIN first_vendor_msg fv ON fv.chat_id = f.chat_id
-                  LEFT JOIN last_msg_ts lm ON lm.chat_id = f.chat_id
+                  LEFT JOIN direct_handoff_business dhb ON dhb.chat_id = f.chat_id
+                  LEFT JOIN direct_duration_business ddb ON ddb.chat_id = f.chat_id
                 )
                 SELECT
                   f.attendant_name AS vendedor,
