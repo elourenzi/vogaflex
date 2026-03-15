@@ -1778,6 +1778,59 @@ function AppContent({ onLogout }) {
                       </div>
                       <div className="dashboard-section">
                         <div className="section-head">
+                          <h3>Alertas de atendimento</h3>
+                          <p className="muted">
+                            Conversas que precisam de atenção · respeita filtro de período e vendedor.
+                          </p>
+                        </div>
+                        {!alertsData && !alertsLoading ? (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={loadAlerts}
+                          >
+                            Verificar alertas
+                          </button>
+                        ) : alertsLoading ? (
+                          <p className="empty">Analisando conversas...</p>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ marginBottom: 12 }}
+                              onClick={loadAlerts}
+                            >
+                              Atualizar
+                            </button>
+                            <div className="alerts-grid">
+                              {[
+                                { key: "sem_retorno_2d", label: "Sem retorno +2 dias", desc: "Ativo sem mensagem do vendedor" },
+                                { key: "aguardando_resposta", label: "Aguardando resposta", desc: "Cliente sem retorno do vendedor" },
+                                { key: "midia_sem_info", label: "Midia sem informacao", desc: "Foto/video sem texto de apoio" },
+                                { key: "orcamento_sem_followup", label: "Orcamento sem follow-up", desc: "Orcamento enviado, sem retorno +2d" },
+                              ].map((alert) => {
+                                const list = alertsData?.[alert.key] || [];
+                                return (
+                                  <button
+                                    key={alert.key}
+                                    type="button"
+                                    className={`alert-card${list.length > 0 ? " has-alerts" : ""}${alertModalKey === alert.key ? " is-active" : ""}`}
+                                    onClick={() => list.length > 0 && setAlertModalKey(alert.key)}
+                                    disabled={list.length === 0}
+                                  >
+                                    <p className="alert-count">{list.length}</p>
+                                    <p className="alert-label">{alert.label}</p>
+                                    <p className="alert-desc">{alert.desc}</p>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <div className="dashboard-section">
+                        <div className="section-head">
                           <h3>Comparativo por vendedor</h3>
                           <p className="muted">
                             Selecione um vendedor no menu lateral para ver os detalhes.
@@ -1896,69 +1949,6 @@ function AppContent({ onLogout }) {
                                   </p>
                                   <p className="stat-foot">Não registrado no CRM</p>
                                 </article>
-                              </div>
-                              <div className="dashboard-section">
-                                <div className="section-head">
-                                  <h3>Alertas de atendimento</h3>
-                                  <p className="muted">
-                                    Conversas que precisam de atenção.
-                                  </p>
-                                </div>
-                                {!alertsData && !alertsLoading ? (
-                                  <button
-                                    type="button"
-                                    className="btn-secondary"
-                                    onClick={loadAlerts}
-                                  >
-                                    Verificar alertas
-                                  </button>
-                                ) : alertsLoading ? (
-                                  <p className="empty">Analisando conversas...</p>
-                                ) : (
-                                  <div className="alerts-grid">
-                                    {[
-                                      {
-                                        key: "sem_retorno_2d",
-                                        label: "Sem retorno há +2 dias",
-                                        desc: "Ativo · sem mensagem do vendedor",
-                                        extraSuffix: "d sem retorno",
-                                      },
-                                      {
-                                        key: "aguardando_resposta",
-                                        label: "Aguardando resposta",
-                                        desc: "Última mensagem é do cliente",
-                                        extraSuffix: null,
-                                      },
-                                      {
-                                        key: "midia_sem_info",
-                                        label: "Mídia sem informação",
-                                        desc: "Vendedor enviou foto/vídeo sem texto",
-                                        extraSuffix: null,
-                                      },
-                                      {
-                                        key: "orcamento_sem_followup",
-                                        label: "Orçamento sem follow-up",
-                                        desc: "Orçamento enviado, sem retorno +2 dias",
-                                        extraSuffix: "d",
-                                      },
-                                    ].map((alert) => {
-                                      const list = alertsData?.[alert.key] || [];
-                                      return (
-                                        <button
-                                          key={alert.key}
-                                          type="button"
-                                          className={`alert-card${list.length > 0 ? " has-alerts" : ""}${alertModalKey === alert.key ? " is-active" : ""}`}
-                                          onClick={() => list.length > 0 && setAlertModalKey(alert.key)}
-                                          disabled={list.length === 0}
-                                        >
-                                          <p className="alert-count">{list.length}</p>
-                                          <p className="alert-label">{alert.label}</p>
-                                          <p className="alert-desc">{alert.desc}</p>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                )}
                               </div>
                               <div className="dashboard-section">
                                 <div className="section-head">
