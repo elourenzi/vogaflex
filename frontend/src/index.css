@@ -235,10 +235,25 @@ input {
 }
 
 .dashboard-filters {
-  display: grid;
-  grid-template-columns: minmax(180px, 220px) repeat(auto-fit, minmax(140px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
-  align-items: end;
+  align-items: flex-end;
+}
+
+.dashboard-filters .range-buttons {
+  flex: 0 0 auto;
+}
+
+.dashboard-filters .field {
+  flex: 1 1 130px;
+  margin-bottom: 0;
+}
+
+.dashboard-filters .primary-button {
+  flex: 0 0 auto;
+  padding: 0 16px;
+  align-self: flex-end;
 }
 
 .range-buttons {
