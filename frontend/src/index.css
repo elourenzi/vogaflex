@@ -1568,6 +1568,13 @@ h3 {
   color: var(--text-primary);
 }
 
+.dashboard-section--alerts {
+  background: rgba(232, 162, 58, 0.06);
+  border: 1px solid rgba(232, 162, 58, 0.25);
+  border-radius: 12px;
+  padding: 18px;
+}
+
 .alerts-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

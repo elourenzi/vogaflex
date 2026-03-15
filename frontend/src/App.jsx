@@ -1788,7 +1788,7 @@ function AppContent({ onLogout }) {
                           </article>
                         </div>
                       </div>
-                      <div className="dashboard-section">
+                      <div className="dashboard-section dashboard-section--alerts">
                         <div className="section-head">
                           <h3>Alertas de atendimento</h3>
                           <p className="muted">
