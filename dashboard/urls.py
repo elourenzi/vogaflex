@@ -18,4 +18,9 @@ urlpatterns = [
         views.dead_conversations_api,
         name="dead_conversations_api",
     ),
+    path(
+        "api/dashboard/alerts/",
+        views.alerts_api,
+        name="alerts_api",
+    ),
 ]

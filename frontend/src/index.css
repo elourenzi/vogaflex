@@ -1551,3 +1551,71 @@ h3 {
   outline: 2px solid rgba(192, 84, 44, 0.6);
   outline-offset: 2px;
 }
+
+/* ── Alerts section ─────────────────────────── */
+.btn-secondary {
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-secondary:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.alerts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.alert-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-align: left;
+  cursor: default;
+  transition: border-color 0.15s, background 0.15s;
+}
+.alert-card.has-alerts {
+  cursor: pointer;
+  border-color: #e8a23a;
+  background: rgba(232, 162, 58, 0.06);
+}
+.alert-card.has-alerts:hover {
+  background: rgba(232, 162, 58, 0.12);
+}
+.alert-card.is-active {
+  border-color: #c0542c;
+  background: rgba(192, 84, 44, 0.08);
+}
+.alert-count {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-primary);
+  margin: 0;
+}
+.alert-card.has-alerts .alert-count {
+  color: #c0542c;
+}
+.alert-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+.alert-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 0;
+}

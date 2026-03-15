@@ -1900,3 +1900,160 @@ def dead_conversations_api(request):
 
 def index(request):
     return render(request, "dashboard/index.html", {"debug": settings.DEBUG})
+
+
+def alerts_api(request):
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
+    vendedor = request.GET.get("vendedor")
+
+    where_clauses = ["c.chat_id IS NOT NULL"]
+    params = []
+    if date_from:
+        where_clauses.append(
+            "(COALESCE(c.start_time, c.created_at) AT TIME ZONE 'America/Sao_Paulo')::date >= %s::date"
+        )
+        params.append(date_from)
+    if date_to:
+        where_clauses.append(
+            "(COALESCE(c.start_time, c.created_at) AT TIME ZONE 'America/Sao_Paulo')::date <= %s::date"
+        )
+        params.append(date_to)
+    if vendedor and vendedor != "Todos":
+        where_clauses.append("c.attendant_name = %s")
+        params.append(vendedor)
+
+    where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    unified_base_sql = """
+      SELECT DISTINCT ON (chat_id)
+        chat_id, contact_name, attendant_name,
+        current_funnel_stage, start_time, end_time, created_at, updated_at, budget_value
+      FROM (
+        SELECT
+          sc.chat_id::text AS chat_id, sc.contact_name, sc.attendant_name,
+          sc.status AS current_funnel_stage,
+          sc.chat_created_at AS start_time,
+          CASE WHEN sc.status IN ('finished', 'closed') THEN sc.chat_updated_at ELSE NULL END AS end_time,
+          sc.inserted_at AS created_at, sc.refreshed_at AS updated_at,
+          sc.budget_value, 0 AS _src
+        FROM smclick_chat sc WHERE sc.chat_id IS NOT NULL
+        UNION ALL
+        SELECT
+          c.chat_id, c.contact_name, c.attendant_name,
+          c.current_funnel_stage, c.start_time, c.end_time,
+          c.created_at, c.updated_at, c.budget_value, 1 AS _src
+        FROM conversations c WHERE c.chat_id IS NOT NULL
+      ) u
+      ORDER BY chat_id, _src ASC, COALESCE(start_time, created_at) DESC NULLS LAST
+    """
+
+    closed_stages = "('finished','closed','Finalizado','finalizado','Lixo','lixo')"
+
+    query = f"""
+      WITH filtered AS (
+        SELECT DISTINCT ON (c.chat_id) c.*
+        FROM ({unified_base_sql}) c
+        {where_sql}
+        ORDER BY c.chat_id, COALESCE(c.start_time, c.created_at) DESC NULLS LAST
+      ),
+      last_vendor AS (
+        SELECT chat_id::text AS chat_id, MAX(event_time) AS ts
+        FROM smclick_message
+        WHERE from_me = true AND sent_by_name IS NOT NULL
+        GROUP BY chat_id
+      ),
+      last_msg AS (
+        SELECT DISTINCT ON (chat_id::text) chat_id::text AS chat_id, from_me, event_time
+        FROM smclick_message
+        ORDER BY chat_id, event_time DESC
+      ),
+      last_vendor_media AS (
+        SELECT DISTINCT ON (chat_id::text) chat_id::text AS chat_id, event_time AS media_ts
+        FROM smclick_message
+        WHERE from_me = true AND sent_by_name IS NOT NULL
+          AND message_type IN ('image','video','document','ptt','audio')
+        ORDER BY chat_id, event_time DESC
+      ),
+      post_media_text AS (
+        SELECT DISTINCT sm.chat_id::text AS chat_id
+        FROM smclick_message sm
+        JOIN last_vendor_media lm ON lm.chat_id = sm.chat_id::text
+        WHERE sm.from_me = true AND sm.sent_by_name IS NOT NULL
+          AND sm.event_time > lm.media_ts
+          AND sm.message_type NOT IN ('image','video','document','ptt','audio')
+          AND sm.content_text IS NOT NULL AND LENGTH(sm.content_text) > 5
+      ),
+      a_sem_retorno AS (
+        SELECT
+          f.chat_id, f.contact_name AS cliente_nome, f.attendant_name AS vendedor_nome,
+          ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(lv.ts, f.created_at))) / 86400)::int AS extra_int
+        FROM filtered f
+        LEFT JOIN last_vendor lv ON lv.chat_id = f.chat_id
+        WHERE f.current_funnel_stage NOT IN {closed_stages}
+          AND COALESCE(lv.ts, f.created_at) < NOW() - INTERVAL '2 days'
+      ),
+      a_aguardando AS (
+        SELECT f.chat_id, f.contact_name AS cliente_nome, f.attendant_name AS vendedor_nome,
+               lm.event_time AS desde
+        FROM filtered f
+        JOIN last_msg lm ON lm.chat_id = f.chat_id
+        WHERE lm.from_me = false
+          AND f.current_funnel_stage NOT IN {closed_stages}
+      ),
+      a_midia_sem_info AS (
+        SELECT f.chat_id, f.contact_name AS cliente_nome, f.attendant_name AS vendedor_nome,
+               lm.media_ts
+        FROM filtered f
+        JOIN last_vendor_media lm ON lm.chat_id = f.chat_id
+        WHERE f.chat_id NOT IN (SELECT chat_id FROM post_media_text)
+          AND f.current_funnel_stage NOT IN {closed_stages}
+      ),
+      a_orcamento_sem_followup AS (
+        SELECT f.chat_id, f.contact_name AS cliente_nome, f.attendant_name AS vendedor_nome,
+               ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(lv.ts, f.created_at))) / 86400)::int AS extra_int
+        FROM filtered f
+        LEFT JOIN last_vendor lv ON lv.chat_id = f.chat_id
+        WHERE f.budget_value IS NOT NULL AND f.budget_value > 0
+          AND f.current_funnel_stage NOT IN {closed_stages}
+          AND COALESCE(lv.ts, f.created_at) < NOW() - INTERVAL '2 days'
+      )
+
+      SELECT 'sem_retorno_2d' AS alert_type, chat_id, cliente_nome, vendedor_nome,
+             extra_int::text AS extra
+        FROM a_sem_retorno ORDER BY extra_int DESC LIMIT 200
+      UNION ALL
+      SELECT 'aguardando_resposta', chat_id, cliente_nome, vendedor_nome,
+             TO_CHAR(desde AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI')
+        FROM a_aguardando ORDER BY desde ASC LIMIT 200
+      UNION ALL
+      SELECT 'midia_sem_info', chat_id, cliente_nome, vendedor_nome,
+             TO_CHAR(media_ts AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI')
+        FROM a_midia_sem_info ORDER BY media_ts DESC LIMIT 200
+      UNION ALL
+      SELECT 'orcamento_sem_followup', chat_id, cliente_nome, vendedor_nome,
+             extra_int::text
+        FROM a_orcamento_sem_followup ORDER BY extra_int DESC LIMIT 200
+    """
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+        result = {
+            "sem_retorno_2d": [],
+            "aguardando_resposta": [],
+            "midia_sem_info": [],
+            "orcamento_sem_followup": [],
+        }
+        for alert_type, chat_id, cliente_nome, vendedor_nome, extra in rows:
+            result[alert_type].append({
+                "chat_id": chat_id,
+                "cliente_nome": cliente_nome,
+                "vendedor_nome": vendedor_nome,
+                "extra": extra,
+            })
+        return JsonResponse(result)
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)

@@ -442,6 +442,9 @@ function AppContent({ onLogout }) {
   const [deadContactsOpen, setDeadContactsOpen] = useState(false);
   const [deadContactsList, setDeadContactsList] = useState([]);
   const [deadContactsLoading, setDeadContactsLoading] = useState(false);
+  const [alertsData, setAlertsData] = useState(null);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertModalKey, setAlertModalKey] = useState(null);
 
   const loadConversations = async () => {
     const params = new URLSearchParams();
@@ -1090,6 +1093,19 @@ function AppContent({ onLogout }) {
       .then((data) => setDeadContactsList(data.conversations || []))
       .catch(() => setDeadContactsList([]))
       .finally(() => setDeadContactsLoading(false));
+  };
+
+  const loadAlerts = () => {
+    setAlertsLoading(true);
+    const params = new URLSearchParams();
+    if (dashboardDateFrom) params.set("date_from", dashboardDateFrom);
+    if (dashboardDateTo) params.set("date_to", dashboardDateTo);
+    if (dashboardVendor) params.set("vendedor", dashboardVendor);
+    fetch(`/api/dashboard/alerts/?${params}`)
+      .then((res) => res.json())
+      .then((data) => setAlertsData(data))
+      .catch(() => setAlertsData(null))
+      .finally(() => setAlertsLoading(false));
   };
 
   return (
@@ -1883,6 +1899,69 @@ function AppContent({ onLogout }) {
                               </div>
                               <div className="dashboard-section">
                                 <div className="section-head">
+                                  <h3>Alertas de atendimento</h3>
+                                  <p className="muted">
+                                    Conversas que precisam de atenção.
+                                  </p>
+                                </div>
+                                {!alertsData && !alertsLoading ? (
+                                  <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    onClick={loadAlerts}
+                                  >
+                                    Verificar alertas
+                                  </button>
+                                ) : alertsLoading ? (
+                                  <p className="empty">Analisando conversas...</p>
+                                ) : (
+                                  <div className="alerts-grid">
+                                    {[
+                                      {
+                                        key: "sem_retorno_2d",
+                                        label: "Sem retorno há +2 dias",
+                                        desc: "Ativo · sem mensagem do vendedor",
+                                        extraSuffix: "d sem retorno",
+                                      },
+                                      {
+                                        key: "aguardando_resposta",
+                                        label: "Aguardando resposta",
+                                        desc: "Última mensagem é do cliente",
+                                        extraSuffix: null,
+                                      },
+                                      {
+                                        key: "midia_sem_info",
+                                        label: "Mídia sem informação",
+                                        desc: "Vendedor enviou foto/vídeo sem texto",
+                                        extraSuffix: null,
+                                      },
+                                      {
+                                        key: "orcamento_sem_followup",
+                                        label: "Orçamento sem follow-up",
+                                        desc: "Orçamento enviado, sem retorno +2 dias",
+                                        extraSuffix: "d",
+                                      },
+                                    ].map((alert) => {
+                                      const list = alertsData?.[alert.key] || [];
+                                      return (
+                                        <button
+                                          key={alert.key}
+                                          type="button"
+                                          className={`alert-card${list.length > 0 ? " has-alerts" : ""}${alertModalKey === alert.key ? " is-active" : ""}`}
+                                          onClick={() => list.length > 0 && setAlertModalKey(alert.key)}
+                                          disabled={list.length === 0}
+                                        >
+                                          <p className="alert-count">{list.length}</p>
+                                          <p className="alert-label">{alert.label}</p>
+                                          <p className="alert-desc">{alert.desc}</p>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="dashboard-section">
+                                <div className="section-head">
                                   <h3>Timeline por etapa (estratificação)</h3>
                                   <p className="muted">
                                     Clique na barra para listar clientes e abrir histórico.
@@ -2067,6 +2146,66 @@ function AppContent({ onLogout }) {
           </div>
         </div>
       )}
+      {alertModalKey && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setAlertModalKey(null)}
+        >
+          <div
+            className="modal-card"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <p className="stat-label">
+                  {alertModalKey === "sem_retorno_2d" && "Sem retorno há +2 dias"}
+                  {alertModalKey === "aguardando_resposta" && "Aguardando resposta do vendedor"}
+                  {alertModalKey === "midia_sem_info" && "Mídia enviada sem informação"}
+                  {alertModalKey === "orcamento_sem_followup" && "Orçamento sem follow-up"}
+                </p>
+                <p className="stat-foot">
+                  {(alertsData?.[alertModalKey] || []).length} conversa(s)
+                </p>
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setAlertModalKey(null)}
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="stage-client-list">
+              {(alertsData?.[alertModalKey] || []).map((item) => (
+                <button
+                  key={item.chat_id}
+                  type="button"
+                  className="stage-client-item"
+                  onClick={() => {
+                    setAlertModalKey(null);
+                    setStageClientModal({
+                      chat_id: item.chat_id,
+                      cliente_nome: item.cliente_nome || item.chat_id,
+                      cliente_telefone: null,
+                      vendedor_nome: item.vendedor_nome,
+                    });
+                  }}
+                >
+                  <span className="client-name">{item.cliente_nome || item.chat_id}</span>
+                  <span className="client-meta">
+                    {item.vendedor_nome || "—"}
+                    {item.extra ? ` · ${item.extra}${alertModalKey === "sem_retorno_2d" || alertModalKey === "orcamento_sem_followup" ? "d" : ""}` : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {deadContactsOpen && (
         <div
           className="modal-overlay"
