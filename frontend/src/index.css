@@ -1626,3 +1626,80 @@ h3 {
   color: var(--text-secondary);
   margin: 0;
 }
+
+/* ── Pipeline funnel ────────────────────────── */
+.pipeline-funnel {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 8px;
+}
+
+.pipeline-step {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 14px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-align: left;
+  cursor: default;
+}
+
+.pipeline-step.is-clickable {
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.pipeline-step.is-clickable:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+
+.pipeline-step.is-loss {
+  border-left: 3px solid rgba(192, 84, 44, 0.45);
+}
+
+.pipeline-step-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0;
+}
+
+.pipeline-step-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.pipeline-step-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.pipeline-step-perda {
+  font-size: 11px;
+  font-weight: 600;
+  color: #c0542c;
+  background: rgba(192, 84, 44, 0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.pipeline-step-note {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.pipeline-divider {
+  grid-column: 1 / -1;
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}

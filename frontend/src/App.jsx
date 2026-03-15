@@ -1750,53 +1750,65 @@ function AppContent({ onLogout }) {
                       <div className="dashboard-section">
                         <div className="section-head">
                           <h3>Painel geral comparativo</h3>
-                          <p className="muted">Resumo consolidado da equipe.</p>
+                          <p className="muted">Resumo consolidado da equipe · funil de conversão.</p>
                         </div>
-                        <div className="metric-grid">
-                          <article className="metric-card">
-                            <p className="stat-label">Contatos líquidos</p>
-                            <p className="stat-value">{formatCount(vendorTotals.contacts)}</p>
-                            <p className="stat-foot">Base do período (sem transferidos)</p>
-                          </article>
-                          <article className="metric-card">
-                            <p className="stat-label">Orçamentos detectados</p>
-                            <p className="stat-value">{formatCount(vendorTotals.budgetsCount)}</p>
-                            <p className="stat-foot">
-                              {formatPercent(vendorTotals.budgetsCount, vendorTotals.contacts)} de conversão
-                            </p>
-                          </article>
-                          <article className="metric-card">
-                            <p className="stat-label">Somatória orçada (registrado)</p>
-                            <p className="stat-value">{formatCurrency(vendorTotals.budgetsSum)}</p>
-                            <p className="stat-foot">Volume financeiro</p>
-                          </article>
-                          <article className="metric-card">
-                            <p className="stat-label">Somatória orçada (mensagens)</p>
-                            <p className="stat-value">
-                              {formatCurrency(vendorTotals.budgetsSumDetected)}
-                            </p>
-                            <p className="stat-foot">Não registrado no CRM</p>
-                          </article>
-                          <article className="metric-card">
-                            <p className="stat-label">TMA</p>
-                            <p className="stat-value">
-                              {formatDuration(dashboardStats?.avg_duration_seconds || 0)}
-                            </p>
-                            <p className="stat-foot">Tempo médio de atendimento</p>
-                          </article>
-                          <article className="metric-card">
-                            <p className="stat-label">TME</p>
-                            <p className="stat-value">
-                              {formatDuration(dashboardStats?.avg_handoff_seconds || 0)}
-                            </p>
-                            <p className="stat-foot">SLA bot → vendedor</p>
-                          </article>
-                          <article className="metric-card">
-                            <p className="stat-label">Contatos mortos</p>
-                            <p className="stat-value">{formatCount(vendorTotals.dead)}</p>
-                            <p className="stat-foot">Sem resposta</p>
-                          </article>
-                        </div>
+                        {(() => {
+                          const recebidos    = vendorTotals.contacts || 0;
+                          const comInteracao = Math.max(0, recebidos - (vendorTotals.dead || 0));
+                          const propostas    = vendorTotals.budgetsCount || 0;
+                          const morreram     = vendorTotals.dead || 0;
+                          const parados      = alertsData?.sem_retorno_2d?.length ?? null;
+                          const semFollowup  = alertsData?.orcamento_sem_followup?.length ?? null;
+                          const steps = [
+                            { label: "Contatos recebidos",     value: recebidos,    perda: null, note: "Base do período" },
+                            { label: "Contatos c/ interação",  value: comInteracao, perda: formatPercent(recebidos - comInteracao, recebidos), note: "Sem interação" },
+                            { label: "Parado há +2 dias",      value: parados,      perda: parados != null ? formatPercent(parados, recebidos) : null, note: "Do total", loss: true, onClick: () => parados && setAlertModalKey("sem_retorno_2d") },
+                            { label: "Propostas enviadas",     value: propostas,    perda: formatPercent(recebidos - propostas, recebidos), note: "Sem proposta" },
+                            { label: "Proposta sem follow-up", value: semFollowup,  perda: semFollowup != null ? formatPercent(semFollowup, propostas) : null, note: "Das propostas", loss: true, onClick: () => semFollowup && setAlertModalKey("orcamento_sem_followup") },
+                            { label: "Morreram",               value: morreram,     perda: formatPercent(morreram, recebidos), note: "Do total", loss: true, onClick: openDeadContacts },
+                          ];
+                          return (
+                            <div className="pipeline-funnel">
+                              {steps.map((s) => {
+                                const Tag = s.onClick ? "button" : "div";
+                                return (
+                                  <Tag key={s.label} type={s.onClick ? "button" : undefined}
+                                    className={"pipeline-step" + (s.loss ? " is-loss" : "") + (s.onClick ? " is-clickable" : "")}
+                                    onClick={s.onClick || undefined}
+                                  >
+                                    <p className="pipeline-step-label">{s.label}</p>
+                                    <p className="pipeline-step-value">{s.value == null ? "—" : formatCount(s.value)}</p>
+                                    <div className="pipeline-step-foot">
+                                      {s.perda && <span className="pipeline-step-perda">{s.perda}</span>}
+                                      <span className="pipeline-step-note">{s.note}</span>
+                                    </div>
+                                  </Tag>
+                                );
+                              })}
+                              <div className="pipeline-divider" />
+                              <div className="pipeline-step">
+                                <p className="pipeline-step-label">TMA</p>
+                                <p className="pipeline-step-value">{formatDuration(dashboardStats?.avg_duration_seconds || 0)}</p>
+                                <div className="pipeline-step-foot"><span className="pipeline-step-note">Tempo médio atendimento</span></div>
+                              </div>
+                              <div className="pipeline-step">
+                                <p className="pipeline-step-label">TME</p>
+                                <p className="pipeline-step-value">{formatDuration(dashboardStats?.avg_handoff_seconds || 0)}</p>
+                                <div className="pipeline-step-foot"><span className="pipeline-step-note">SLA bot → vendedor</span></div>
+                              </div>
+                              <div className="pipeline-step">
+                                <p className="pipeline-step-label">Somatória orçada</p>
+                                <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsSum)}</p>
+                                <div className="pipeline-step-foot"><span className="pipeline-step-note">Registrado no CRM</span></div>
+                              </div>
+                              <div className="pipeline-step">
+                                <p className="pipeline-step-label">Somatória (mensagens)</p>
+                                <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsSumDetected)}</p>
+                                <div className="pipeline-step-foot"><span className="pipeline-step-note">Não registrado no CRM</span></div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div className="dashboard-section dashboard-section--alerts">
                         <div className="section-head">
@@ -1853,66 +1865,42 @@ function AppContent({ onLogout }) {
                                   {formatCount(selectedVendorData.contacts_received)} contatos líquidos
                                 </span>
                               </div>
-                              <div className="funnel-grid">
-                                {[
-                                  {
-                                    label: "Contatos líquidos",
-                                    value: selectedVendorData.contacts_received || 0,
-                                    note: "Base líquida do vendedor",
-                                    clickable: true,
-                                  },
-                                  {
-                                    label: "Orçamentos detectados",
-                                    value:
-                                      selectedVendorData.budgets_detected_count ||
-                                      selectedVendorData.budgets_count ||
-                                      0,
-                                    note: `${formatPercent(
-                                      selectedVendorData.budgets_detected_count ||
-                                        selectedVendorData.budgets_count ||
-                                        0,
-                                      selectedVendorData.contacts_received || 0
-                                    )} de conversão`,
-                                  },
-                                  {
-                                    label: "Morreu",
-                                    value: selectedVendorData.dead_contacts || 0,
-                                    note: `${formatPercent(
-                                      selectedVendorData.dead_contacts || 0,
-                                      selectedVendorData.contacts_received || 0
-                                    )} do total`,
-                                    onClick: openDeadContacts,
-                                  },
-                                ].map((item) =>
-                                  item.clickable || item.onClick ? (
-                                    <button
-                                      key={item.label}
-                                      type="button"
-                                      className={`funnel-step is-clickable${
-                                        item.clickable && vendorBreakdownOpen ? " is-active" : ""
-                                      }${
-                                        item.onClick === openDeadContacts && deadContactsOpen ? " is-active" : ""
-                                      }`}
-                                      onClick={item.onClick || (() => setVendorBreakdownOpen((open) => !open))}
-                                      aria-expanded={item.clickable ? vendorBreakdownOpen : deadContactsOpen}
-                                    >
-                                      <p className="stat-label">{item.label}</p>
-                                      <p className="stat-value">
-                                        {formatCount(item.value)}
-                                      </p>
-                                      <p className="stat-foot">{item.note}</p>
-                                    </button>
-                                  ) : (
-                                    <article className="funnel-step" key={item.label}>
-                                      <p className="stat-label">{item.label}</p>
-                                      <p className="stat-value">
-                                        {formatCount(item.value)}
-                                      </p>
-                                      <p className="stat-foot">{item.note}</p>
-                                    </article>
-                                  )
-                                )}
-                              </div>
+                              {(() => {
+                                const recebidos    = selectedVendorData.contacts_received || 0;
+                                const morreram     = selectedVendorData.dead_contacts || 0;
+                                const comInteracao = Math.max(0, recebidos - morreram);
+                                const propostas    = selectedVendorData.budgets_detected_count || selectedVendorData.budgets_count || 0;
+                                const parados      = alertsData?.sem_retorno_2d?.filter(c => c.vendedor_nome === selectedVendorData.vendedor)?.length ?? null;
+                                const semFollowup  = alertsData?.orcamento_sem_followup?.filter(c => c.vendedor_nome === selectedVendorData.vendedor)?.length ?? null;
+                                const steps = [
+                                  { label: "Contatos recebidos",     value: recebidos,    perda: null, note: "Base líquida" },
+                                  { label: "Contatos c/ interação",  value: comInteracao, perda: formatPercent(recebidos - comInteracao, recebidos), note: "Sem interação" },
+                                  { label: "Parado há +2 dias",      value: parados,      perda: parados != null ? formatPercent(parados, recebidos) : null, note: "Do total", loss: true, onClick: () => parados && setAlertModalKey("sem_retorno_2d") },
+                                  { label: "Propostas enviadas",     value: propostas,    perda: formatPercent(recebidos - propostas, recebidos), note: "Sem proposta" },
+                                  { label: "Proposta sem follow-up", value: semFollowup,  perda: semFollowup != null ? formatPercent(semFollowup, propostas) : null, note: "Das propostas", loss: true, onClick: () => semFollowup && setAlertModalKey("orcamento_sem_followup") },
+                                  { label: "Morreram",               value: morreram,     perda: formatPercent(morreram, recebidos), note: "Do total", loss: true, onClick: openDeadContacts },
+                                ];
+                                return (
+                                  <div className="pipeline-funnel" style={{marginBottom: 16}}>
+                                    {steps.map((s) => {
+                                      const Tag = s.onClick ? "button" : "div";
+                                      return (
+                                        <Tag key={s.label} type={s.onClick ? "button" : undefined}
+                                          className={"pipeline-step" + (s.loss ? " is-loss" : "") + (s.onClick ? " is-clickable" : "")}
+                                          onClick={s.onClick || undefined}
+                                        >
+                                          <p className="pipeline-step-label">{s.label}</p>
+                                          <p className="pipeline-step-value">{s.value == null ? "—" : formatCount(s.value)}</p>
+                                          <div className="pipeline-step-foot">
+                                            {s.perda && <span className="pipeline-step-perda">{s.perda}</span>}
+                                            <span className="pipeline-step-note">{s.note}</span>
+                                          </div>
+                                        </Tag>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
                               <div className="vendor-metrics">
                                 <article className="metric-card">
                                   <p className="stat-label">TMA</p>
