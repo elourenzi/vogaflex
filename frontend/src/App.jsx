@@ -809,6 +809,18 @@ function AppContent({ onLogout }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView, dashboardTab, dashboardVendor, dashboardFetchVersion]);
 
+  useEffect(() => {
+    if (activeView !== "dashboard" || dashboardTab !== "vendors") return;
+    setAlertsData(null);
+  }, [activeView, dashboardTab, dashboardVendor, dashboardDateFrom, dashboardDateTo]);
+
+  useEffect(() => {
+    if (activeView !== "dashboard" || dashboardTab !== "vendors") return;
+    if (alertsData !== null || alertsLoading) return;
+    loadAlerts();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, dashboardTab, alertsData, alertsLoading]);
+
   const dashboardStats = dashboardData?.stats;
   const sdrData = dashboardData?.sdr;
   const vendorData = dashboardData?.vendors;
@@ -1783,50 +1795,32 @@ function AppContent({ onLogout }) {
                             Conversas que precisam de atenção · respeita filtro de período e vendedor.
                           </p>
                         </div>
-                        {!alertsData && !alertsLoading ? (
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            onClick={loadAlerts}
-                          >
-                            Verificar alertas
-                          </button>
-                        ) : alertsLoading ? (
+                        {alertsLoading ? (
                           <p className="empty">Analisando conversas...</p>
                         ) : (
-                          <>
-                            <button
-                              type="button"
-                              className="btn-secondary"
-                              style={{ marginBottom: 12 }}
-                              onClick={loadAlerts}
-                            >
-                              Atualizar
-                            </button>
-                            <div className="alerts-grid">
-                              {[
-                                { key: "sem_retorno_2d", label: "Sem retorno +2 dias", desc: "Ativo sem mensagem do vendedor" },
-                                { key: "aguardando_resposta", label: "Aguardando resposta", desc: "Cliente sem retorno do vendedor" },
-                                { key: "midia_sem_info", label: "Midia sem informacao", desc: "Foto/video sem texto de apoio" },
-                                { key: "orcamento_sem_followup", label: "Orcamento sem follow-up", desc: "Orcamento enviado, sem retorno +2d" },
-                              ].map((alert) => {
-                                const list = alertsData?.[alert.key] || [];
-                                return (
-                                  <button
-                                    key={alert.key}
-                                    type="button"
-                                    className={`alert-card${list.length > 0 ? " has-alerts" : ""}${alertModalKey === alert.key ? " is-active" : ""}`}
-                                    onClick={() => list.length > 0 && setAlertModalKey(alert.key)}
-                                    disabled={list.length === 0}
-                                  >
-                                    <p className="alert-count">{list.length}</p>
-                                    <p className="alert-label">{alert.label}</p>
-                                    <p className="alert-desc">{alert.desc}</p>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </>
+                          <div className="alerts-grid">
+                            {[
+                              { key: "sem_retorno_2d", label: "Sem retorno +2 dias", desc: "Ativo sem mensagem do vendedor" },
+                              { key: "aguardando_resposta", label: "Aguardando resposta", desc: "Cliente sem retorno do vendedor" },
+                              { key: "midia_sem_info", label: "Midia sem informacao", desc: "Foto/video sem texto de apoio" },
+                              { key: "orcamento_sem_followup", label: "Orcamento sem follow-up", desc: "Orcamento enviado, sem retorno +2d" },
+                            ].map((alert) => {
+                              const list = alertsData?.[alert.key] || [];
+                              return (
+                                <button
+                                  key={alert.key}
+                                  type="button"
+                                  className={`alert-card${list.length > 0 ? " has-alerts" : ""}${alertModalKey === alert.key ? " is-active" : ""}`}
+                                  onClick={() => list.length > 0 && setAlertModalKey(alert.key)}
+                                  disabled={list.length === 0}
+                                >
+                                  <p className="alert-count">{list.length === 0 && alertsData === null ? "—" : list.length}</p>
+                                  <p className="alert-label">{alert.label}</p>
+                                  <p className="alert-desc">{alert.desc}</p>
+                                </button>
+                              );
+                            })}
+                          </div>
                         )}
                       </div>
                       <div className="dashboard-section">
