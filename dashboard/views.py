@@ -1960,7 +1960,11 @@ def alerts_api(request):
       last_vendor AS (
         SELECT chat_id::text AS chat_id, MAX(event_time) AS ts
         FROM smclick_message
-        WHERE from_me = true AND sent_by_name IS NOT NULL
+        WHERE from_me = true
+          AND (
+            sent_by_name IS NOT NULL
+            OR (content_text IS NOT NULL AND content_text ~ '^\*[^*]+\*')
+          )
         GROUP BY chat_id
       ),
       last_msg AS (
@@ -1971,7 +1975,11 @@ def alerts_api(request):
       last_vendor_media AS (
         SELECT DISTINCT ON (chat_id::text) chat_id::text AS chat_id, event_time AS media_ts
         FROM smclick_message
-        WHERE from_me = true AND sent_by_name IS NOT NULL
+        WHERE from_me = true
+          AND (
+            sent_by_name IS NOT NULL
+            OR (content_text IS NOT NULL AND content_text ~ '^\*[^*]+\*')
+          )
           AND message_type IN ('image','video','document','ptt','audio')
         ORDER BY chat_id, event_time DESC
       ),
@@ -1979,7 +1987,11 @@ def alerts_api(request):
         SELECT DISTINCT sm.chat_id::text AS chat_id
         FROM smclick_message sm
         JOIN last_vendor_media lm ON lm.chat_id = sm.chat_id::text
-        WHERE sm.from_me = true AND sm.sent_by_name IS NOT NULL
+        WHERE sm.from_me = true
+          AND (
+            sm.sent_by_name IS NOT NULL
+            OR (sm.content_text IS NOT NULL AND sm.content_text ~ '^\*[^*]+\*')
+          )
           AND sm.event_time > lm.media_ts
           AND sm.message_type NOT IN ('image','video','document','ptt','audio')
           AND sm.content_text IS NOT NULL AND LENGTH(sm.content_text) > 5
