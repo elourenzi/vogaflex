@@ -1978,22 +1978,26 @@ def alerts_api(request):
       ),
       -- Last message after handoff (client or vendor)
       last_msg AS (
-        SELECT DISTINCT ON (sm.chat_id::text)
-          sm.chat_id::text AS chat_id, sm.from_me, sm.event_time
-        FROM smclick_message sm
-        JOIN handoff_ts ht ON ht.chat_id = sm.chat_id::text
-        WHERE sm.event_time >= ht.ts
-        ORDER BY sm.chat_id, sm.event_time DESC
+        SELECT DISTINCT ON (chat_id) chat_id, from_me, event_time
+        FROM (
+          SELECT sm.chat_id::text AS chat_id, sm.from_me, sm.event_time
+          FROM smclick_message sm
+          JOIN handoff_ts ht ON ht.chat_id = sm.chat_id::text
+          WHERE sm.event_time >= ht.ts
+        ) _lm
+        ORDER BY chat_id, event_time DESC
       ),
       -- Last vendor media after handoff
       last_vendor_media AS (
-        SELECT DISTINCT ON (sm.chat_id::text)
-          sm.chat_id::text AS chat_id, sm.event_time AS media_ts
-        FROM smclick_message sm
-        JOIN handoff_ts ht ON ht.chat_id = sm.chat_id::text
-        WHERE sm.from_me = true AND sm.event_time >= ht.ts
-          AND sm.message_type IN ('image','video','document','ptt','audio')
-        ORDER BY sm.chat_id, sm.event_time DESC
+        SELECT DISTINCT ON (chat_id) chat_id, media_ts
+        FROM (
+          SELECT sm.chat_id::text AS chat_id, sm.event_time AS media_ts
+          FROM smclick_message sm
+          JOIN handoff_ts ht ON ht.chat_id = sm.chat_id::text
+          WHERE sm.from_me = true AND sm.event_time >= ht.ts
+            AND sm.message_type IN ('image','video','document','ptt','audio')
+        ) _lvm
+        ORDER BY chat_id, media_ts DESC
       ),
       -- Vendor text message after last vendor media
       post_media_text AS (

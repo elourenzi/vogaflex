@@ -1115,8 +1115,18 @@ function AppContent({ onLogout }) {
     if (dashboardVendor) params.set("vendedor", dashboardVendor);
     fetch(`/api/dashboard/alerts/?${params}`)
       .then((res) => res.json())
-      .then((data) => setAlertsData(data))
-      .catch(() => setAlertsData(null))
+      .then((data) => {
+        if (data.error) {
+          console.error("Alerts API error:", data.error);
+          setAlertsData({ _error: data.error, sem_retorno_2d: [], aguardando_resposta: [], midia_sem_info: [], orcamento_sem_followup: [] });
+        } else {
+          setAlertsData(data);
+        }
+      })
+      .catch((err) => {
+        console.error("Alerts fetch error:", err);
+        setAlertsData(null);
+      })
       .finally(() => setAlertsLoading(false));
   };
 
@@ -1797,6 +1807,8 @@ function AppContent({ onLogout }) {
                         </div>
                         {alertsLoading ? (
                           <p className="empty">Analisando conversas...</p>
+                        ) : alertsData?._error ? (
+                          <p className="empty" style={{color:"#c0542c"}}>Erro: {alertsData._error}</p>
                         ) : (
                           <div className="alerts-grid">
                             {[
