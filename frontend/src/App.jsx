@@ -953,6 +953,9 @@ function AppContent({ onLogout }) {
     ? { ...selectedVendorData, ...(selectedVendorFullData || {}) }
     : null;
 
+  // True while the vendor-specific call is in flight and full stats aren't available yet.
+  const vendorFullStatsLoading = !!dashboardVendor && !selectedVendorFullData && vendorBreakdownLoading;
+
   const contactsBreakdownStages = vendorBreakdown?.stages || [];
   const contactsBreakdownTotal =
     Number.isFinite(vendorBreakdown?.total) && vendorBreakdown?.total >= 0
@@ -1916,41 +1919,35 @@ function AppContent({ onLogout }) {
                                 <article className="metric-card">
                                   <p className="stat-label">TMA</p>
                                   <p className="stat-value">
-                                    {formatDuration(
-                                      selectedVendorMerged.avg_duration_seconds || 0
-                                    )}
+                                    {vendorFullStatsLoading ? <span className="stat-loading">···</span> : formatDuration(selectedVendorMerged.avg_duration_seconds || 0)}
                                   </p>
                                   <p className="stat-foot">Tempo médio</p>
                                 </article>
                                 <article className="metric-card">
                                   <p className="stat-label">TME</p>
                                   <p className="stat-value">
-                                    {formatDuration(
-                                      selectedVendorMerged.avg_handoff_seconds || 0
-                                    )}
+                                    {vendorFullStatsLoading ? <span className="stat-loading">···</span> : formatDuration(selectedVendorMerged.avg_handoff_seconds || 0)}
                                   </p>
                                   <p className="stat-foot">Tempo de espera</p>
                                 </article>
                                 <article className="metric-card">
                                   <p className="stat-label">Score IA</p>
                                   <p className="stat-value">
-                                    {formatScore(selectedVendorMerged.avg_score || 0)}
+                                    {vendorFullStatsLoading ? <span className="stat-loading">···</span> : formatScore(selectedVendorMerged.avg_score || 0)}
                                   </p>
                                   <p className="stat-foot">Média 0–10</p>
                                 </article>
                                 <article className="metric-card">
                                   <p className="stat-label">Somatória orçada (registrado)</p>
                                   <p className="stat-value">
-                                    {formatCurrency(selectedVendorMerged.budgets_sum || 0)}
+                                    {vendorFullStatsLoading ? <span className="stat-loading">···</span> : formatCurrency(selectedVendorMerged.budgets_sum || 0)}
                                   </p>
                                   <p className="stat-foot">Valor total</p>
                                 </article>
                                 <article className="metric-card">
                                   <p className="stat-label">Somatória orçada (mensagens)</p>
                                   <p className="stat-value">
-                                    {formatCurrency(
-                                      selectedVendorMerged.budgets_sum_detected || 0
-                                    )}
+                                    {vendorFullStatsLoading ? <span className="stat-loading">···</span> : formatCurrency(selectedVendorMerged.budgets_sum_detected || 0)}
                                   </p>
                                   <p className="stat-foot">Não registrado no CRM</p>
                                 </article>

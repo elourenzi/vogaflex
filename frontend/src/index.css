@@ -760,6 +760,17 @@ button.funnel-step {
   font-size: 0.85rem;
 }
 
+.stat-loading {
+  color: var(--muted);
+  letter-spacing: 4px;
+  animation: stat-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes stat-pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+
 .dashboard-note {
   margin-top: 18px;
   color: var(--muted);
