@@ -204,6 +204,11 @@ def conversations_api(request):
             "COALESCE(c.updated_at, c.data_criacao_chat, c.created_at)::date >= %s::date"
         )
         params.append(date_from)
+    elif not date_to:
+        # sem filtro de data: limita aos últimos 30 dias como padrão de segurança
+        where_clauses.append(
+            "COALESCE(c.updated_at, c.data_criacao_chat, c.created_at)::date >= (CURRENT_DATE - INTERVAL '30 days')::date"
+        )
     if date_to:
         where_clauses.append(
             "COALESCE(c.updated_at, c.data_criacao_chat, c.created_at)::date <= %s::date"

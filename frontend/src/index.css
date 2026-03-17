@@ -771,6 +771,12 @@ button.funnel-step {
   50% { opacity: 1; }
 }
 
+.refreshing-badge {
+  color: var(--muted);
+  font-size: 0.8em;
+  animation: stat-pulse 1.4s ease-in-out infinite;
+}
+
 .dashboard-note {
   margin-top: 18px;
   color: var(--muted);

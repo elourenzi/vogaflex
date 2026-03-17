@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -406,10 +406,14 @@ function MiniBars({ data, valueKey, color }) {
   );
 }
 
+const CONV_SNAPSHOT_KEY = "vogaflex_conv_snapshot_v1";
+
 function AppContent({ onLogout }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [backgroundRefreshing, setBackgroundRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const isFirstLoad = useRef(true);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedId, setSelectedId] = useState(null);
@@ -460,10 +464,10 @@ function AppContent({ onLogout }) {
     if (dateTo) params.set("date_to", dateTo);
     if (!dateFrom && !dateTo && monthFilter) {
       const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      params.set("date_from", formatDateInput(monthStart));
-      params.set("date_to", formatDateInput(monthEnd));
+      const thirtyDaysAgo = new Date(now);
+      thirtyDaysAgo.setDate(now.getDate() - 30);
+      params.set("date_from", formatDateInput(thirtyDaysAgo));
+      params.set("date_to", formatDateInput(now));
     }
     if (vendedorFilter && vendedorFilter !== "Todos") {
       params.set("vendedor", vendedorFilter);
@@ -478,20 +482,50 @@ function AppContent({ onLogout }) {
       valor_orcamento: normalizeMoney(item.valor_orcamento),
     }));
     setEvents(normalized);
+    // salva snapshot para carregamento instantâneo na próxima sessão
+    try {
+      localStorage.setItem(CONV_SNAPSHOT_KEY, JSON.stringify(normalized));
+    } catch (_) {}
   };
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    loadConversations()
-      .catch((err) => {
-        if (!active) return;
-        setError(err.message || "Erro desconhecido");
-      })
-      .finally(() => {
-        if (!active) return;
+
+    const doFetch = (isBackground) => {
+      loadConversations()
+        .catch((err) => {
+          if (!active || isBackground) return;
+          setError(err.message || "Erro desconhecido");
+        })
+        .finally(() => {
+          if (!active) return;
+          if (isBackground) {
+            setBackgroundRefreshing(false);
+          } else {
+            setLoading(false);
+          }
+        });
+    };
+
+    // Na primeira carga, mostra o snapshot instantaneamente e atualiza em background
+    if (isFirstLoad.current) {
+      isFirstLoad.current = false;
+      let snap = null;
+      try {
+        const raw = localStorage.getItem(CONV_SNAPSHOT_KEY);
+        if (raw) snap = JSON.parse(raw);
+      } catch (_) {}
+      if (snap) {
+        setEvents(snap);
         setLoading(false);
-      });
+        setBackgroundRefreshing(true);
+        doFetch(true);
+        return () => { active = false; };
+      }
+    }
+
+    setLoading(true);
+    doFetch(false);
     return () => {
       active = false;
     };
@@ -516,8 +550,8 @@ function AppContent({ onLogout }) {
   const filteredConversations = useMemo(() => {
     const term = normalizeText(debouncedSearch);
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(now.getDate() - 30);
     return conversations.filter((item) => {
       // filtros ja aplicados no backend quando usa o botao "Aplicar"
       if (monthFilter) {
@@ -529,7 +563,7 @@ function AppContent({ onLogout }) {
         if (!basis) return false;
         const basisDate = new Date(basis);
         if (Number.isNaN(basisDate.getTime())) return false;
-        if (basisDate < monthStart || basisDate >= monthEnd) return false;
+        if (basisDate < thirtyDaysAgo || basisDate > now) return false;
       }
       if (!term) return true;
       const haystack = [
@@ -572,7 +606,7 @@ function AppContent({ onLogout }) {
     if (dateFrom && dateTo) return `${dateFrom} até ${dateTo}`;
     if (dateFrom) return `A partir de ${dateFrom}`;
     if (dateTo) return `Até ${dateTo}`;
-    return "Mês corrente";
+    return "Últimos 30 dias";
   }, [dateFrom, dateTo]);
 
   const activeFilterChips = useMemo(() => {
@@ -1208,7 +1242,12 @@ function AppContent({ onLogout }) {
             <p className="eyebrow">Vogaflex</p>
             <h2>Conversas</h2>
             <p className="muted">
-              {loading ? "Carregando..." : `${filteredConversations.length} encontradas`}
+              {loading
+                ? "Carregando..."
+                : `${filteredConversations.length} encontradas`}
+              {!loading && backgroundRefreshing && (
+                <span className="refreshing-badge"> · atualizando</span>
+              )}
             </p>
           </div>
           <span className="pill">{periodLabel}</span>
