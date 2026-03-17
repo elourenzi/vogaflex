@@ -1179,7 +1179,7 @@ function AppContent({ onLogout }) {
       })
       .catch((err) => {
         console.error("Alerts fetch error:", err);
-        setAlertsData(null);
+        setAlertsData({ _error: String(err), sem_retorno_2d: [], aguardando_resposta: [], midia_sem_info: [], orcamento_sem_followup: [] });
       })
       .finally(() => setAlertsLoading(false));
   };
@@ -1847,7 +1847,7 @@ function AppContent({ onLogout }) {
                                     onClick={s.onClick || undefined}
                                   >
                                     <p className="pipeline-step-label">{s.label}</p>
-                                    <p className="pipeline-step-value">{s.value == null ? "—" : formatCount(s.value)}</p>
+                                    <p className="pipeline-step-value">{s.value == null ? (alertsLoading ? "..." : "—") : formatCount(s.value)}</p>
                                     <div className="pipeline-step-foot">
                                       {s.perda && <span className="pipeline-step-perda">{s.perda}</span>}
                                       <span className="pipeline-step-note">{s.note}</span>
@@ -1961,7 +1961,7 @@ function AppContent({ onLogout }) {
                                           onClick={s.onClick || undefined}
                                         >
                                           <p className="pipeline-step-label">{s.label}</p>
-                                          <p className="pipeline-step-value">{s.value == null ? "—" : formatCount(s.value)}</p>
+                                          <p className="pipeline-step-value">{s.value == null ? (alertsLoading ? "..." : "—") : formatCount(s.value)}</p>
                                           <div className="pipeline-step-foot">
                                             {s.perda && <span className="pipeline-step-perda">{s.perda}</span>}
                                             <span className="pipeline-step-note">{s.note}</span>
