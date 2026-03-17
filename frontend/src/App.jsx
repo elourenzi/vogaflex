@@ -745,13 +745,17 @@ function AppContent({ onLogout }) {
     setDashboardFetchVersion((value) => value + 1);
   };
 
+  // Dashboard principal: só carrega quando o usuário clica "Buscar dados"
+  // (dashboardFetchVersion > 0). Na abertura inicial, mostra tela vazia.
   useEffect(() => {
-    let active = true;
-    if (activeView !== "dashboard") return () => {};
+    if (activeView !== "dashboard") return;
     if (!dashboardDateFrom && !dashboardDateTo) {
       applyDashboardPreset("month");
-      return () => {};
+      return;
     }
+    // Só busca se o usuário já clicou pelo menos uma vez
+    if (dashboardFetchVersion === 0) return;
+    let active = true;
     setDashboardLoading(true);
     const dashboardParams = buildDashboardParams(
       dashboardTab === "sdr" && dashboardSdrMember
@@ -854,10 +858,11 @@ function AppContent({ onLogout }) {
 
   useEffect(() => {
     if (activeView !== "dashboard" || dashboardTab !== "vendors") return;
+    if (!dashboardData) return; // só busca alertas depois que o dashboard carregou
     if (alertsData !== null || alertsLoading) return;
     loadAlerts();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, dashboardTab, alertsData, alertsLoading]);
+  }, [activeView, dashboardTab, alertsData, alertsLoading, dashboardData]);
 
   const dashboardStats = dashboardData?.stats;
   const sdrData = dashboardData?.sdr;
@@ -1717,6 +1722,17 @@ function AppContent({ onLogout }) {
               </div>
               {dashboardLoading ? (
                 <div className="empty">Carregando indicadores...</div>
+              ) : !dashboardData ? (
+                <div className="empty" style={{ textAlign: "center", padding: "48px 16px" }}>
+                  <p style={{ marginBottom: 16 }}>Selecione o período e clique para carregar os indicadores.</p>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => setDashboardFetchVersion((v) => v + 1)}
+                  >
+                    Buscar dados
+                  </button>
+                </div>
               ) : dashboardData ? (
                 <>
                   {dashboardTab === "sdr" ? (
