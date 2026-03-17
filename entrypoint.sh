@@ -4,6 +4,9 @@ set -e
 # Collect static files
 python manage.py collectstatic --noinput
 
+# Run DB setup (idempotent — safe to run every deploy)
+python manage.py setup_db
+
 # Background: run sync_smclick every 5 minutes
 (
   while true; do
