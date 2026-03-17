@@ -23,4 +23,9 @@ urlpatterns = [
         views.alerts_api,
         name="alerts_api",
     ),
+    path(
+        "webhook/smclick/",
+        views.smclick_webhook,
+        name="smclick_webhook",
+    ),
 ]

@@ -1,8 +1,13 @@
+import hashlib
+import json
+
 from django.conf import settings
 from django.core.cache import cache
 from django.db import connection, transaction
 from django.http import JsonResponse
 from django.shortcuts import render
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 
 STAGE_STRATIFICATION_ORDER = [
     ("aguardando", "Aguardando"),
@@ -2150,3 +2155,67 @@ def alerts_api(request):
         return JsonResponse(result)
     except Exception as exc:
         return JsonResponse({"error": str(exc)}, status=500)
+
+
+@csrf_exempt
+@require_POST
+def smclick_webhook(request):
+    """Direct webhook receiver for SmClick events.
+
+    Replaces the n8n Webhook Buffer flow:
+    1. Receives raw SmClick POST payload
+    2. Deduplicates via sha256 hash
+    3. Inserts into smclick_ingest_buffer
+    4. Returns 200 immediately
+
+    The sync_smclick management command (cron) processes the buffer.
+    """
+    try:
+        body = request.body
+        if not body:
+            return JsonResponse({"ok": False, "error": "empty body"}, status=400)
+
+        payload_text = body.decode("utf-8")
+        payload_hash = hashlib.sha256(payload_text.encode("utf-8")).hexdigest()
+
+        # Extract metadata from the JSON for indexed columns
+        try:
+            data = json.loads(payload_text)
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
+
+        event_name = data.get("event") or None
+        event_time = data.get("event_time") or None
+        infos = data.get("infos") or {}
+        chat = infos.get("chat") or {}
+        message = infos.get("message") or {}
+        chat_id = chat.get("id") or None
+        message_id = message.get("id") or None
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO smclick_ingest_buffer (
+                    payload_hash, payload, event_name, event_time,
+                    chat_id, message_id
+                ) VALUES (
+                    %s, %s::jsonb, %s,
+                    %s::timestamptz, %s::uuid, %s::uuid
+                )
+                ON CONFLICT (payload_hash) DO NOTHING
+                RETURNING id
+                """,
+                [payload_hash, payload_text, event_name,
+                 event_time, chat_id, message_id],
+            )
+            row = cursor.fetchone()
+
+        return JsonResponse({
+            "ok": True,
+            "buffered": row is not None,
+            "event": event_name,
+            "chat_id": str(chat_id) if chat_id else None,
+            "message_id": str(message_id) if message_id else None,
+        })
+    except Exception as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=500)
