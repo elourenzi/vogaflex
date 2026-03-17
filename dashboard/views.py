@@ -2112,6 +2112,7 @@ def alerts_api(request):
         JOIN last_msg lm ON lm.chat_id = f.chat_id
         WHERE lm.from_me = false
           AND f.current_funnel_stage NOT IN {closed_stages}
+          AND lm.event_time >= NOW() - INTERVAL '48 hours'
       ),
       a_midia_sem_info AS (
         SELECT f.chat_id, f.contact_name AS cliente_nome, f.contact_phone AS cliente_telefone,

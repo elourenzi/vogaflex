@@ -1935,7 +1935,7 @@ function AppContent({ onLogout }) {
                           <div className="alerts-grid">
                             {[
                               { key: "sem_retorno_2d", label: "Parado há +2 dias", desc: "Vendedor não contata há mais de 2 dias" },
-                              { key: "aguardando_resposta", label: "Cliente sem resposta", desc: "Última mensagem da conversa é do cliente" },
+                              { key: "aguardando_resposta", label: "Clientes sem resposta", desc: "Sem resposta do vendedor há menos de 48h" },
                               { key: "midia_sem_info", label: "Mídia sem texto", desc: "Foto/vídeo enviado sem explicação" },
                               { key: "orcamento_sem_followup", label: "Proposta sem follow-up", desc: "Orçamento registrado sem contato há +2 dias" },
                             ].map((alert) => {
@@ -2249,7 +2249,7 @@ function AppContent({ onLogout }) {
               <div>
                 <p className="stat-label">
                   {alertModalKey === "sem_retorno_2d" && "Parado há +2 dias"}
-                  {alertModalKey === "aguardando_resposta" && "Cliente sem resposta"}
+                  {alertModalKey === "aguardando_resposta" && "Clientes sem resposta"}
                   {alertModalKey === "midia_sem_info" && "Mídia sem texto"}
                   {alertModalKey === "orcamento_sem_followup" && "Proposta sem follow-up"}
                 </p>
