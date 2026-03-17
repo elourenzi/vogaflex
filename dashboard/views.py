@@ -1323,8 +1323,14 @@ def dashboard_api(request):
                         WHERE LOWER(COALESCE(f.current_funnel_stage, '')) NOT IN
                           ('finalizado', 'finished', 'closed', 'lixo')
                       ) AS contacts_received,
-                      0 AS budgets_count,
-                      0 AS budgets_detected_count,
+                      COUNT(*) FILTER (
+                        WHERE COALESCE(f.budget_value, 0) > 0
+                          AND NOT (f.reason_norm ~ '{support_reason_pattern}')
+                      ) AS budgets_count,
+                      COUNT(*) FILTER (
+                        WHERE COALESCE(f.budget_value, 0) > 0
+                          AND NOT (f.reason_norm ~ '{support_reason_pattern}')
+                      ) AS budgets_detected_count,
                       0::float AS budgets_sum,
                       0::float AS budgets_sum_detected,
                       0 AS dead_contacts,
