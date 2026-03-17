@@ -2032,6 +2032,11 @@ def alerts_api(request):
     """
 
     closed_stages = "('finished','closed','Finalizado','finalizado','Lixo','lixo')"
+    followup_stages = """(
+        'Contato feito','contato feito','Contato feito 2','contato feito 2',
+        '1ª chamada','1a chamada','2ª chamada','2a chamada','3ª chamada','3a chamada',
+        'Proposta enviada','proposta enviada'
+    )"""
 
     query = f"""
       WITH filtered AS (
@@ -2130,6 +2135,7 @@ def alerts_api(request):
         LEFT JOIN last_vendor lv ON lv.chat_id = f.chat_id
         WHERE f.budget_value IS NOT NULL AND f.budget_value > 0
           AND f.current_funnel_stage NOT IN {closed_stages}
+          AND f.current_funnel_stage NOT IN {followup_stages}
           AND COALESCE(lv.ts, f.created_at) < NOW() - INTERVAL '2 days'
       )
 
