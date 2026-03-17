@@ -819,46 +819,26 @@ def dashboard_api(request):
         owners_join_sql = "LEFT JOIN owners o ON o.chat_id = f.chat_id"
         owners_norm_select = "COALESCE(o.owner_norm, ''::text) AS owner_norm,"
 
+    # ── Optimization: materialize filtered as temp table ──────────
+    _create_filtered_sql = filtered_base_sql
+    _create_filtered_nv_sql = filtered_base_sql_no_vendor
+    # Redefine: all f-string queries below will embed a trivial ref
+    filtered_base_sql = "SELECT * FROM _tmp_filtered"
+    filtered_base_sql_no_vendor = "SELECT * FROM _tmp_filtered_nv"
+    # Bot events CTE: reads from pre-computed bot_transfers table
+    _bot_events_cte = """
+        bot_events AS (
+            SELECT bt.chat_id, bt.transfer_ts AS bot_transfer_ts
+            FROM bot_transfers bt
+            JOIN _tmp_filtered f ON f.chat_id = bt.chat_id
+        )
+    """
+
     stats_query = f"""
         WITH filtered AS (
           {filtered_base_sql}
         ),
-        bot_events AS (
-          SELECT chat_id, MIN(bot_ts) AS bot_transfer_ts
-          FROM (
-            SELECT m.chat_id, m."timestamp" AS bot_ts
-            FROM messages m
-            JOIN filtered f ON f.chat_id = m.chat_id
-            WHERE m.from_client = false AND m.content IS NOT NULL
-              AND (
-                m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
-              )
-            UNION ALL
-            SELECT sm.chat_id::text, sm.event_time AS bot_ts
-            FROM smclick_message sm
-            JOIN filtered f ON f.chat_id = sm.chat_id::text
-            WHERE sm.from_me = true AND sm.sent_by_name IS NULL
-              AND sm.content_text IS NOT NULL
-              AND (
-                sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                OR sm.content_text ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                OR sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                OR sm.content_text ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                OR sm.content_text ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                OR sm.content_text ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                OR sm.content_text ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                OR sm.content_text ILIKE '%%atendimento ao nosso setor de vendas.%%'
-              )
-          ) _be
-          GROUP BY chat_id
-        ),
+        {_bot_events_cte},
         conversation_times AS (
           SELECT
             f.chat_id,
@@ -1005,19 +985,39 @@ def dashboard_api(request):
 
     try:
         with connection.cursor() as cursor:
-            cursor.execute(stats_query, params)
+            # ── Materialize filtered base into temp tables (once, not 10×) ──
+            cursor.execute("BEGIN")
+            cursor.execute(
+                f"CREATE TEMP TABLE _tmp_filtered ON COMMIT DROP AS {_create_filtered_sql}",
+                params,
+            )
+            cursor.execute("CREATE INDEX ON _tmp_filtered (chat_id)")
+            if vendedor and vendedor != "Todos":
+                cursor.execute(
+                    f"CREATE TEMP TABLE _tmp_filtered_nv ON COMMIT DROP AS {_create_filtered_nv_sql}",
+                    params_no_vendor,
+                )
+                cursor.execute("CREATE INDEX ON _tmp_filtered_nv (chat_id)")
+            else:
+                # sem filtro de vendedor: ambas são iguais
+                cursor.execute(
+                    "CREATE TEMP TABLE _tmp_filtered_nv ON COMMIT DROP AS SELECT * FROM _tmp_filtered"
+                )
+                cursor.execute("CREATE INDEX ON _tmp_filtered_nv (chat_id)")
+
+            cursor.execute(stats_query)
             stats_row = cursor.fetchone()
             stats = {
                 "avg_duration_seconds": float(stats_row[0]) if stats_row[0] is not None else 0,
                 "avg_handoff_seconds": float(stats_row[1]) if stats_row[1] is not None else 0,
             }
-            cursor.execute(stage_count_query, params)
+            cursor.execute(stage_count_query)
             stage_rows = cursor.fetchall()
             stage_counts = [
                 {"stage_name": row[0], "total": row[1]} for row in stage_rows
             ]
 
-            cursor.execute(contacts_breakdown_query, params)
+            cursor.execute(contacts_breakdown_query)
             contacts_rows = cursor.fetchall()
             contacts_stages = [
                 {"stage_name": row[0], "total": row[1]} for row in contacts_rows
@@ -1092,42 +1092,7 @@ def dashboard_api(request):
                   ) _ms
                   GROUP BY chat_id
                 ),
-                bot_events AS (
-                  SELECT chat_id, MIN(bot_ts) AS bot_transfer_ts
-                  FROM (
-                    SELECT m.chat_id, m."timestamp" AS bot_ts
-                    FROM messages m
-                    JOIN filtered f ON f.chat_id = m.chat_id
-                    WHERE m.from_client = false AND m.content IS NOT NULL
-                      AND (
-                        m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                      )
-                    UNION ALL
-                    SELECT sm.chat_id::text, sm.event_time AS bot_ts
-                    FROM smclick_message sm
-                    JOIN filtered f ON f.chat_id = sm.chat_id::text
-                    WHERE sm.from_me = true AND sm.sent_by_name IS NULL
-                      AND sm.content_text IS NOT NULL
-                      AND (
-                        sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR sm.content_text ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                      )
-                  ) _be
-                  GROUP BY chat_id
-                )
+                {_bot_events_cte}
                 SELECT
                   COUNT(*) FILTER (WHERE b.bot_transfer_ts IS NULL) AS total_contacts,
                   COUNT(*) FILTER (
@@ -1203,42 +1168,7 @@ def dashboard_api(request):
                   ) _ms
                   GROUP BY chat_id
                 ),
-                bot_events AS (
-                  SELECT chat_id, MIN(bot_ts) AS bot_transfer_ts
-                  FROM (
-                    SELECT m.chat_id, m."timestamp" AS bot_ts
-                    FROM messages m
-                    JOIN filtered f ON f.chat_id = m.chat_id
-                    WHERE m.from_client = false AND m.content IS NOT NULL
-                      AND (
-                        m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                      )
-                    UNION ALL
-                    SELECT sm.chat_id::text, sm.event_time AS bot_ts
-                    FROM smclick_message sm
-                    JOIN filtered f ON f.chat_id = sm.chat_id::text
-                    WHERE sm.from_me = true AND sm.sent_by_name IS NULL
-                      AND sm.content_text IS NOT NULL
-                      AND (
-                        sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR sm.content_text ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                      )
-                  ) _be
-                  GROUP BY chat_id
-                )
+                {_bot_events_cte}
                 SELECT
                   date_trunc('day', COALESCE(f.start_time, f.created_at) AT TIME ZONE 'America/Sao_Paulo')::date AS day,
                   COUNT(*) FILTER (WHERE b.bot_transfer_ts IS NULL) AS contacts,
@@ -1301,42 +1231,7 @@ def dashboard_api(request):
                   FROM filtered f
                   {owners_join_sql}
                 ),
-                bot_events AS (
-                  SELECT chat_id, MIN(bot_ts) AS bot_transfer_ts
-                  FROM (
-                    SELECT m.chat_id, m."timestamp" AS bot_ts
-                    FROM messages m
-                    JOIN filtered f ON f.chat_id = m.chat_id
-                    WHERE m.from_client = false AND m.content IS NOT NULL
-                      AND (
-                        m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                      )
-                    UNION ALL
-                    SELECT sm.chat_id::text, sm.event_time AS bot_ts
-                    FROM smclick_message sm
-                    JOIN filtered f ON f.chat_id = sm.chat_id::text
-                    WHERE sm.from_me = true AND sm.sent_by_name IS NULL
-                      AND sm.content_text IS NOT NULL
-                      AND (
-                        sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR sm.content_text ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                      )
-                  ) _be
-                  GROUP BY chat_id
-                )
+                {_bot_events_cte}
                 SELECT
                   date_trunc('day', b.bot_transfer_ts AT TIME ZONE 'America/Sao_Paulo')::date AS day,
                   COUNT(*) AS transferred
@@ -1507,42 +1402,7 @@ def dashboard_api(request):
                     AND src.budget_value <= {budget_outlier_ceiling}
                   GROUP BY src.chat_id
                 ),
-                bot_events AS (
-                  SELECT chat_id, MIN(bot_ts) AS bot_transfer_ts
-                  FROM (
-                    SELECT m.chat_id, m."timestamp" AS bot_ts
-                    FROM messages m
-                    JOIN filtered f ON f.chat_id = m.chat_id
-                    WHERE m.from_client = false AND m.content IS NOT NULL
-                      AND (
-                        m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR m.content ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR m.content ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                        OR m.content ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                      )
-                    UNION ALL
-                    SELECT sm.chat_id::text, sm.event_time AS bot_ts
-                    FROM smclick_message sm
-                    JOIN filtered f ON f.chat_id = sm.chat_id::text
-                    WHERE sm.from_me = true AND sm.sent_by_name IS NULL
-                      AND sm.content_text IS NOT NULL
-                      AND (
-                        sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR sm.content_text ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR sm.content_text ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                        OR sm.content_text ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                        OR sm.content_text ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                      )
-                  ) _be
-                  GROUP BY chat_id
-                ),
+                {_bot_events_cte},
                 message_stats AS (
                   SELECT chat_id,
                          SUM(CASE WHEN outbound THEN 1 ELSE 0 END) AS outbound_count
@@ -1867,7 +1727,7 @@ def dashboard_api(request):
                 ORDER BY f.attendant_name, score;
             """
 
-            cursor.execute(sdr_summary_query, params)
+            cursor.execute(sdr_summary_query)
             sdr_row = cursor.fetchone() or (0, 0, 0, 0, 0, 0, 0)
             sdr_summary = {
                 "contacts": sdr_row[0] or 0,
@@ -1879,7 +1739,7 @@ def dashboard_api(request):
                 "dead": sdr_row[6] or 0,
             }
 
-            cursor.execute(sdr_daily_query, params)
+            cursor.execute(sdr_daily_query)
             sdr_daily_rows = cursor.fetchall()
             sdr_daily = [
                 {
@@ -1894,7 +1754,7 @@ def dashboard_api(request):
                 for row in sdr_daily_rows
             ]
 
-            cursor.execute(sdr_transferred_daily_query, params)
+            cursor.execute(sdr_transferred_daily_query)
             transferred_rows = cursor.fetchall()
             sdr_transferred_daily = [
                 {
@@ -1904,7 +1764,7 @@ def dashboard_api(request):
                 for row in transferred_rows
             ]
 
-            cursor.execute(sdr_members_query, params_no_vendor)
+            cursor.execute(sdr_members_query)
             sdr_member_rows = cursor.fetchall()
             sdr_members = [
                 {
@@ -1915,7 +1775,7 @@ def dashboard_api(request):
                 for row in sdr_member_rows
             ]
 
-            cursor.execute(vendor_summary_query, params)
+            cursor.execute(vendor_summary_query)
             vendor_rows = cursor.fetchall()
             vendors = [
                 {
@@ -1933,13 +1793,14 @@ def dashboard_api(request):
                 for row in vendor_rows
             ]
 
-            cursor.execute(vendor_scores_query, params)
+            cursor.execute(vendor_scores_query)
             score_rows = cursor.fetchall()
             vendor_scores = {}
             for vendedor, score, total in score_rows:
                 vendor_scores.setdefault(vendedor, []).append(
                     {"score": score, "total": total}
                 )
+            cursor.execute("COMMIT")
 
         _response_data = {
             "stats": stats,
@@ -1967,6 +1828,10 @@ def dashboard_api(request):
         cache.set(_cache_key, _response_data, timeout=_cache_ttl)
         return JsonResponse(_response_data)
     except Exception as exc:
+        try:
+            connection.cursor().execute("ROLLBACK")
+        except Exception:
+            pass
         return JsonResponse({"error": str(exc)}, status=500)
 
 

@@ -70,6 +70,31 @@ class Command(BaseCommand):
                         f"msgs={row[2]}, elapsed={time.time()-t0:.0f}s"
                     )
 
+            # Phase 3: refresh bot_transfers for recently touched messages
+            self.stdout.write("Phase 3: refreshing bot_transfers...")
+            cur.execute("""
+                INSERT INTO bot_transfers (chat_id, transfer_ts, source)
+                SELECT chat_id, MIN(bot_ts), 'sync'
+                FROM (
+                  SELECT sm.chat_id::text AS chat_id, sm.event_time AS bot_ts
+                  FROM smclick_message sm
+                  WHERE sm.from_me = true AND sm.sent_by_name IS NULL
+                    AND sm.content_text IS NOT NULL
+                    AND sm.last_seen_at >= NOW() - INTERVAL '15 minutes'
+                    AND (
+                      sm.content_text ILIKE '%%atendimento ao nosso setor de vendas%%'
+                      OR sm.content_text ILIKE '%%atendimento ao nosso time de vendas%%'
+                      OR sm.content_text ILIKE '%%encaminhar ao nosso time de vendas%%'
+                    )
+                ) _be
+                GROUP BY chat_id
+                ON CONFLICT (chat_id) DO UPDATE SET
+                  transfer_ts = LEAST(bot_transfers.transfer_ts, EXCLUDED.transfer_ts),
+                  detected_at = NOW()
+            """)
+            bt_count = cur.rowcount
+            self.stdout.write(f"  bot_transfers refreshed: {bt_count} rows")
+
         elapsed = time.time() - t0
         self.stdout.write(
             self.style.SUCCESS(
