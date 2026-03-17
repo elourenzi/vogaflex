@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -1452,33 +1452,60 @@ function AppContent({ onLogout }) {
               const showStatus =
                 statusText && statusText.toLowerCase() !== "true";
 
+              // Date divider: show date label when day changes
+              let dateDivider = null;
+              const curDate = entry.evento_timestamp ? new Date(entry.evento_timestamp) : null;
+              const prevEntry = index > 0 ? dedupedMessages[index - 1] : null;
+              const prevDate = prevEntry?.evento_timestamp ? new Date(prevEntry.evento_timestamp) : null;
+              if (curDate && !Number.isNaN(curDate.getTime())) {
+                const curDay = curDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+                const prevDay = prevDate && !Number.isNaN(prevDate.getTime())
+                  ? prevDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })
+                  : null;
+                if (curDay !== prevDay) {
+                  const today = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+                  const yesterday = new Date(Date.now() - 86400000).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+                  let label = curDay;
+                  if (curDay === today) label = "Hoje";
+                  else if (curDay === yesterday) label = "Ontem";
+                  else label = curDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric", timeZone: "America/Sao_Paulo" });
+                  dateDivider = (
+                    <div key={`divider-${curDay}`} className="date-divider">
+                      <span>{label}</span>
+                    </div>
+                  );
+                }
+              }
+
               return (
-                <div
-                  key={entry.id || `${selected.chat_id}-${index}`}
-                  className={`message-row${
-                    sender.role === "vendor" ? " is-outgoing" : ""
-                  }`}
-                >
-                  <article
-                    className={`message-bubble${
+                <React.Fragment key={entry.id || `${selected.chat_id}-${index}`}>
+                  {dateDivider}
+                  <div
+                    className={`message-row${
                       sender.role === "vendor" ? " is-outgoing" : ""
                     }`}
                   >
-                    <div className="message-meta">
-                      <span>
-                        {sender.name}
-                        {bot ? " · BOT" : ""}
-                      </span>
-                    </div>
-                    <p className="message-text">{sender.content}</p>
-                    {showStatus ? (
-                      <div className="message-status">{statusText}</div>
-                    ) : null}
-                  </article>
-                  <span className="message-time">
-                    {formatTime(entry.evento_timestamp)}
-                  </span>
-                </div>
+                    <article
+                      className={`message-bubble${
+                        sender.role === "vendor" ? " is-outgoing" : ""
+                      }`}
+                    >
+                      <div className="message-meta">
+                        <span>
+                          {sender.name}
+                          {bot ? " · BOT" : ""}
+                        </span>
+                      </div>
+                      <p className="message-text">{sender.content}</p>
+                      {showStatus ? (
+                        <div className="message-status">{statusText}</div>
+                      ) : null}
+                    </article>
+                    <span className="message-time">
+                      {formatTime(entry.evento_timestamp)}
+                    </span>
+                  </div>
+                </React.Fragment>
               );
             })
             )}

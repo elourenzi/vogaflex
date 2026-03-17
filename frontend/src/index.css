@@ -1173,6 +1173,21 @@ h3 {
   white-space: pre-wrap;
 }
 
+.date-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 0 4px;
+}
+.date-divider span {
+  background: #e8e0d8;
+  color: #6b5e54;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 14px;
+  border-radius: 8px;
+}
+
 .message-row {
   display: grid;
   gap: 4px;
