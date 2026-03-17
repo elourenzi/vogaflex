@@ -17,6 +17,11 @@ const timeFormatter = new Intl.DateTimeFormat("pt-BR", {
   timeStyle: "short",
 });
 
+const dateTimeFormatter = new Intl.DateTimeFormat("pt-BR", {
+  dateStyle: "short",
+  timeStyle: "short",
+});
+
 const dateOnlyFormatter = new Intl.DateTimeFormat("pt-BR", {
   dateStyle: "short",
 });
@@ -94,6 +99,13 @@ const formatTime = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "--";
   return timeFormatter.format(date);
+};
+
+const formatDateTime = (value) => {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--";
+  return dateTimeFormatter.format(date);
 };
 
 const formatDayLabel = (value) => {
@@ -860,11 +872,11 @@ function AppContent({ onLogout }) {
 
   useEffect(() => {
     if (activeView !== "dashboard" || dashboardTab !== "vendors") return;
-    if (!dashboardData) return; // só busca alertas depois que o dashboard carregou
+    if (!dashboardData || !dashboardVendor) return; // só busca depois que dashboard e vendedor carregaram
     if (alertsData !== null || alertsLoading) return;
     loadAlerts();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, dashboardTab, alertsData, alertsLoading, dashboardData]);
+  }, [activeView, dashboardTab, alertsData, alertsLoading, dashboardData, dashboardVendor]);
 
   const dashboardStats = dashboardData?.stats;
   const sdrData = dashboardData?.sdr;
@@ -1502,7 +1514,7 @@ function AppContent({ onLogout }) {
                       ) : null}
                     </article>
                     <span className="message-time">
-                      {formatTime(entry.evento_timestamp)}
+                      {formatDateTime(entry.evento_timestamp)}
                     </span>
                   </div>
                 </React.Fragment>
@@ -2212,7 +2224,7 @@ function AppContent({ onLogout }) {
                         ) : null}
                       </article>
                       <span className="message-time">
-                        {formatTime(entry.evento_timestamp)}
+                        {formatDateTime(entry.evento_timestamp)}
                       </span>
                     </div>
                   );
@@ -2265,12 +2277,15 @@ function AppContent({ onLogout }) {
                     setStageClientModal({
                       chat_id: item.chat_id,
                       cliente_nome: item.cliente_nome || item.chat_id,
-                      cliente_telefone: null,
+                      cliente_telefone: item.cliente_telefone,
                       vendedor_nome: item.vendedor_nome,
                     });
                   }}
                 >
-                  <span className="client-name">{item.cliente_nome || item.chat_id}</span>
+                  <span className="client-name">
+                    {item.cliente_nome || item.chat_id}
+                    {item.cliente_telefone ? ` · ${item.cliente_telefone}` : ""}
+                  </span>
                   <span className="client-meta">
                     {item.vendedor_nome || "—"}
                     {item.extra ? ` · ${item.extra}${alertModalKey === "sem_retorno_2d" || alertModalKey === "orcamento_sem_followup" ? "d" : ""}` : ""}

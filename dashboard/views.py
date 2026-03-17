@@ -2010,11 +2010,11 @@ def alerts_api(request):
 
     unified_base_sql = """
       SELECT DISTINCT ON (chat_id)
-        chat_id, contact_name, attendant_name,
+        chat_id, contact_name, contact_phone, attendant_name,
         current_funnel_stage, start_time, end_time, created_at, updated_at, budget_value
       FROM (
         SELECT
-          sc.chat_id::text AS chat_id, sc.contact_name, sc.attendant_name,
+          sc.chat_id::text AS chat_id, sc.contact_name, sc.contact_phone, sc.attendant_name,
           sc.status AS current_funnel_stage,
           sc.chat_created_at AS start_time,
           CASE WHEN sc.status IN ('finished', 'closed') THEN sc.chat_updated_at ELSE NULL END AS end_time,
@@ -2023,7 +2023,7 @@ def alerts_api(request):
         FROM smclick_chat sc WHERE sc.chat_id IS NOT NULL
         UNION ALL
         SELECT
-          c.chat_id, c.contact_name, c.attendant_name,
+          c.chat_id, c.contact_name, c.contact_phone, c.attendant_name,
           c.current_funnel_stage, c.start_time, c.end_time,
           c.created_at, c.updated_at, c.budget_value, 1 AS _src
         FROM conversations c WHERE c.chat_id IS NOT NULL
@@ -2096,31 +2096,34 @@ def alerts_api(request):
       ),
       a_sem_retorno AS (
         SELECT
-          f.chat_id, f.contact_name AS cliente_nome, f.attendant_name AS vendedor_nome,
-          ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(lv.ts, f.created_at))) / 86400)::int AS extra_int
+          f.chat_id, f.contact_name AS cliente_nome, f.contact_phone AS cliente_telefone,
+          f.attendant_name AS vendedor_nome,
+          ROUND(EXTRACT(EPOCH FROM (NOW() - lm.event_time)) / 86400)::int AS extra_int
         FROM filtered f
-        LEFT JOIN last_vendor lv ON lv.chat_id = f.chat_id
-        WHERE f.current_funnel_stage NOT IN {closed_stages}
-          AND COALESCE(lv.ts, f.created_at) < NOW() - INTERVAL '2 days'
+        JOIN last_msg lm ON lm.chat_id = f.chat_id
+        WHERE lm.from_me = false
+          AND f.current_funnel_stage NOT IN {closed_stages}
+          AND lm.event_time < NOW() - INTERVAL '24 hours'
       ),
       a_aguardando AS (
-        SELECT f.chat_id, f.contact_name AS cliente_nome, f.attendant_name AS vendedor_nome,
-               lm.event_time AS desde
+        SELECT f.chat_id, f.contact_name AS cliente_nome, f.contact_phone AS cliente_telefone,
+               f.attendant_name AS vendedor_nome, lm.event_time AS desde
         FROM filtered f
         JOIN last_msg lm ON lm.chat_id = f.chat_id
         WHERE lm.from_me = false
           AND f.current_funnel_stage NOT IN {closed_stages}
       ),
       a_midia_sem_info AS (
-        SELECT f.chat_id, f.contact_name AS cliente_nome, f.attendant_name AS vendedor_nome,
-               lm.media_ts
+        SELECT f.chat_id, f.contact_name AS cliente_nome, f.contact_phone AS cliente_telefone,
+               f.attendant_name AS vendedor_nome, lm.media_ts
         FROM filtered f
         JOIN last_vendor_media lm ON lm.chat_id = f.chat_id
         WHERE f.chat_id NOT IN (SELECT chat_id FROM post_media_text)
           AND f.current_funnel_stage NOT IN {closed_stages}
       ),
       a_orcamento_sem_followup AS (
-        SELECT f.chat_id, f.contact_name AS cliente_nome, f.attendant_name AS vendedor_nome,
+        SELECT f.chat_id, f.contact_name AS cliente_nome, f.contact_phone AS cliente_telefone,
+               f.attendant_name AS vendedor_nome,
                ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(lv.ts, f.created_at))) / 86400)::int AS extra_int
         FROM filtered f
         LEFT JOIN last_vendor lv ON lv.chat_id = f.chat_id
@@ -2130,25 +2133,25 @@ def alerts_api(request):
       )
 
       SELECT * FROM (
-        SELECT 'sem_retorno_2d' AS alert_type, chat_id, cliente_nome, vendedor_nome,
+        SELECT 'sem_retorno_2d' AS alert_type, chat_id, cliente_nome, cliente_telefone, vendedor_nome,
                extra_int::text AS extra
         FROM a_sem_retorno ORDER BY extra_int DESC
       ) _r1
       UNION ALL
       SELECT * FROM (
-        SELECT 'aguardando_resposta', chat_id, cliente_nome, vendedor_nome,
+        SELECT 'aguardando_resposta', chat_id, cliente_nome, cliente_telefone, vendedor_nome,
                TO_CHAR(desde AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI')
         FROM a_aguardando ORDER BY desde ASC
       ) _r2
       UNION ALL
       SELECT * FROM (
-        SELECT 'midia_sem_info', chat_id, cliente_nome, vendedor_nome,
+        SELECT 'midia_sem_info', chat_id, cliente_nome, cliente_telefone, vendedor_nome,
                TO_CHAR(media_ts AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI')
         FROM a_midia_sem_info ORDER BY media_ts DESC
       ) _r3
       UNION ALL
       SELECT * FROM (
-        SELECT 'orcamento_sem_followup', chat_id, cliente_nome, vendedor_nome,
+        SELECT 'orcamento_sem_followup', chat_id, cliente_nome, cliente_telefone, vendedor_nome,
                extra_int::text
         FROM a_orcamento_sem_followup ORDER BY extra_int DESC
       ) _r4
@@ -2165,10 +2168,11 @@ def alerts_api(request):
             "midia_sem_info": [],
             "orcamento_sem_followup": [],
         }
-        for alert_type, chat_id, cliente_nome, vendedor_nome, extra in rows:
+        for alert_type, chat_id, cliente_nome, cliente_telefone, vendedor_nome, extra in rows:
             result[alert_type].append({
                 "chat_id": chat_id,
                 "cliente_nome": cliente_nome,
+                "cliente_telefone": cliente_telefone,
                 "vendedor_nome": vendedor_nome,
                 "extra": extra,
             })

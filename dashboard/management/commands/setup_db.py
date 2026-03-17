@@ -136,7 +136,7 @@ class Command(BaseCommand):
                         ),
                         'total\\s*[:\\-]?\\s*r\\$\\s*([0-9\\.]+(?:,[0-9]{2})?)',
                         'g'
-                    ) AS matches ON TRUE
+                    ) AS matches
                     WHERE sm.content_text IS NOT NULL
 
                     UNION ALL
@@ -157,7 +157,7 @@ class Command(BaseCommand):
                         ),
                         'total\\s*[:\\-]?\\s*r\\$\\s*([0-9\\.]+(?:,[0-9]{2})?)',
                         'g'
-                    ) AS matches ON TRUE
+                    ) AS matches
                     WHERE m.content IS NOT NULL
                 ) _src
                 WHERE msg_budget IS NOT NULL
