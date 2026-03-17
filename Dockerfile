@@ -30,5 +30,8 @@ COPY --from=frontend /app/dashboard/static/frontend /app/dashboard/static/fronte
 # NÃO roda collectstatic no build (evita quebra por env ausente)
 # Você roda isso no start, quando EasyPanel já injetou SECRET_KEY, DB, etc.
 
-CMD ["sh", "-c", "python manage.py collectstatic --noinput && gunicorn vogaflex.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --threads ${GUNICORN_THREADS:-4} --timeout ${GUNICORN_TIMEOUT:-120}"]
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+CMD ["/app/entrypoint.sh"]
 
