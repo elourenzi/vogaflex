@@ -95,4 +95,80 @@ class Command(BaseCommand):
             bt_count = cur.rowcount
             self.stdout.write(f"  bot_transfers: {bt_count} rows upserted")
 
+            # ── 6. chat_budget_detected table ─────────────────────────
+            self.stdout.write("Creating chat_budget_detected table...")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS public.chat_budget_detected (
+                    chat_id TEXT PRIMARY KEY,
+                    budget_value NUMERIC(18,2) NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'backfill',
+                    detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_chat_budget_detected_value
+                    ON public.chat_budget_detected (budget_value)
+                    WHERE budget_value > 0
+            """)
+
+            # ── 7. Backfill chat_budget_detected from messages ────────
+            self.stdout.write("Backfilling chat_budget_detected...")
+            cur.execute("""
+                INSERT INTO chat_budget_detected (chat_id, budget_value, source)
+                SELECT
+                    chat_id_txt,
+                    MAX(msg_budget),
+                    'backfill'
+                FROM (
+                    -- SmClick messages
+                    SELECT
+                        sm.chat_id::text AS chat_id_txt,
+                        NULLIF(
+                            REPLACE(REPLACE((matches)[1], '.', ''), ',', '.'),
+                            ''
+                        )::numeric AS msg_budget
+                    FROM smclick_message sm
+                    CROSS JOIN LATERAL regexp_matches(
+                        translate(
+                            lower(COALESCE(sm.content_text, '')),
+                            'áàâãäéèêëíìîïóòôõöúùûüç',
+                            'aaaaaeeeeiiiiooooouuuuc'
+                        ),
+                        'total\\s*[:\\-]?\\s*r\\$\\s*([0-9\\.]+(?:,[0-9]{2})?)',
+                        'g'
+                    ) AS matches ON TRUE
+                    WHERE sm.content_text IS NOT NULL
+
+                    UNION ALL
+
+                    -- Legacy messages table
+                    SELECT
+                        m.chat_id AS chat_id_txt,
+                        NULLIF(
+                            REPLACE(REPLACE((matches)[1], '.', ''), ',', '.'),
+                            ''
+                        )::numeric AS msg_budget
+                    FROM messages m
+                    CROSS JOIN LATERAL regexp_matches(
+                        translate(
+                            lower(COALESCE(m.content, '')),
+                            'áàâãäéèêëíìîïóòôõöúùûüç',
+                            'aaaaaeeeeiiiiooooouuuuc'
+                        ),
+                        'total\\s*[:\\-]?\\s*r\\$\\s*([0-9\\.]+(?:,[0-9]{2})?)',
+                        'g'
+                    ) AS matches ON TRUE
+                    WHERE m.content IS NOT NULL
+                ) _src
+                WHERE msg_budget IS NOT NULL
+                    AND msg_budget > 0
+                    AND msg_budget <= 10000000
+                GROUP BY chat_id_txt
+                ON CONFLICT (chat_id) DO UPDATE SET
+                    budget_value = GREATEST(chat_budget_detected.budget_value, EXCLUDED.budget_value),
+                    detected_at = NOW()
+            """)
+            bd_count = cur.rowcount
+            self.stdout.write(f"  chat_budget_detected: {bd_count} rows upserted")
+
         self.stdout.write(self.style.SUCCESS("setup_db complete"))

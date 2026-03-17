@@ -832,10 +832,13 @@ def dashboard_api(request):
     filtered_base_sql_no_vendor = "SELECT * FROM _tmp_filtered_nv"
     # Bot events CTE: try pre-computed bot_transfers table, fallback to ILIKE scan
     _has_bot_transfers = False
+    _has_budget_detected = False
     try:
         with connection.cursor() as _ck:
             _ck.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'bot_transfers' LIMIT 1")
             _has_bot_transfers = bool(_ck.fetchone())
+            _ck.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'chat_budget_detected' LIMIT 1")
+            _has_budget_detected = bool(_ck.fetchone())
     except Exception:
         pass
 
@@ -863,6 +866,51 @@ def dashboard_api(request):
                     OR sm.content_text ILIKE '%%encaminhar ao nosso time de vendas%%'
                   )
                 GROUP BY sm.chat_id
+            )
+        """
+
+    if _has_budget_detected:
+        _budget_values_cte = """
+            budget_values AS (
+                SELECT
+                    cbd.chat_id AS chat_id_txt,
+                    cbd.budget_value AS max_budget_msg
+                FROM chat_budget_detected cbd
+                JOIN filtered f ON f.chat_id = cbd.chat_id
+                WHERE cbd.budget_value > 0
+                    AND cbd.budget_value <= 10000000
+            )
+        """
+    else:
+        _budget_values_cte = """
+            budget_values AS (
+                SELECT
+                    src.chat_id_txt,
+                    MAX(src.msg_budget) AS max_budget_msg
+                FROM (
+                    SELECT
+                        sm.chat_id::text AS chat_id_txt,
+                        NULLIF(
+                            REPLACE(REPLACE((matches)[1], '.', ''), ',', '.'),
+                            ''
+                        )::numeric AS msg_budget
+                    FROM smclick_message sm
+                    JOIN filtered f ON f.chat_id = sm.chat_id::text
+                    CROSS JOIN LATERAL regexp_matches(
+                        translate(
+                            lower(COALESCE(sm.content_text, '')),
+                            'áàâãäéèêëíìîïóòôõöúùûüç',
+                            'aaaaaeeeeiiiiooooouuuuc'
+                        ),
+                        'total\\\\s*[:\\\\-]?\\\\s*r\\\\$\\\\s*([0-9\\\\.]+(?:,[0-9]{2})?)',
+                        'g'
+                    ) AS matches ON TRUE
+                    WHERE sm.content_text IS NOT NULL
+                ) src
+                WHERE src.msg_budget IS NOT NULL
+                    AND src.msg_budget > 0
+                    AND src.msg_budget <= 10000000
+                GROUP BY src.chat_id_txt
             )
         """
 
@@ -1463,35 +1511,7 @@ def dashboard_api(request):
                     AND f.end_time IS NOT NULL
                     AND LOWER(COALESCE(f.current_funnel_stage, '')) IN ('finalizado', 'finished', 'closed')
                 ),
-                budget_values AS (
-                  SELECT
-                    src.chat_id_txt,
-                    MAX(src.msg_budget) AS max_budget_msg
-                  FROM (
-                    SELECT
-                      mu.chat_id AS chat_id_txt,
-                      NULLIF(
-                        REPLACE(REPLACE((matches)[1], '.', ''), ',', '.'),
-                        ''
-                      )::numeric AS msg_budget
-                    FROM messages_union mu
-                    JOIN filtered f ON f.chat_id::text = mu.chat_id
-                    JOIN LATERAL regexp_matches(
-                      translate(
-                        lower(COALESCE(mu.msg_conteudo, '')),
-                        'áàâãäéèêëíìîïóòôõöúùûüç',
-                        'aaaaaeeeeiiiiooooouuuuc'
-                      ),
-                      'total\\s*[:\\-]?\\s*r\\$\\s*([0-9\\.]+(?:,[0-9]{2})?)',
-                      'g'
-                    ) AS matches ON TRUE
-                    WHERE mu.msg_conteudo IS NOT NULL
-                  ) src
-                  WHERE src.msg_budget IS NOT NULL
-                    AND src.msg_budget > 0
-                    AND src.msg_budget <= {budget_outlier_ceiling}
-                  GROUP BY src.chat_id_txt
-                ),
+                {_budget_values_cte},
                 business_duration AS (
                   SELECT
                     ct.chat_id,

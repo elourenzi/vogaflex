@@ -95,6 +95,45 @@ class Command(BaseCommand):
             bt_count = cur.rowcount
             self.stdout.write(f"  bot_transfers refreshed: {bt_count} rows")
 
+            # Phase 4: refresh chat_budget_detected for recently touched messages
+            self.stdout.write("Phase 4: refreshing chat_budget_detected...")
+            cur.execute("""
+                INSERT INTO chat_budget_detected (chat_id, budget_value, source)
+                SELECT
+                    chat_id_txt,
+                    MAX(msg_budget),
+                    'sync'
+                FROM (
+                    SELECT
+                        sm.chat_id::text AS chat_id_txt,
+                        NULLIF(
+                            REPLACE(REPLACE((matches)[1], '.', ''), ',', '.'),
+                            ''
+                        )::numeric AS msg_budget
+                    FROM smclick_message sm
+                    CROSS JOIN LATERAL regexp_matches(
+                        translate(
+                            lower(COALESCE(sm.content_text, '')),
+                            'áàâãäéèêëíìîïóòôõöúùûüç',
+                            'aaaaaeeeeiiiiooooouuuuc'
+                        ),
+                        'total\\s*[:\\-]?\\s*r\\$\\s*([0-9\\.]+(?:,[0-9]{2})?)',
+                        'g'
+                    ) AS matches ON TRUE
+                    WHERE sm.content_text IS NOT NULL
+                      AND sm.last_seen_at >= NOW() - INTERVAL '15 minutes'
+                ) _src
+                WHERE msg_budget IS NOT NULL
+                    AND msg_budget > 0
+                    AND msg_budget <= 10000000
+                GROUP BY chat_id_txt
+                ON CONFLICT (chat_id) DO UPDATE SET
+                    budget_value = GREATEST(chat_budget_detected.budget_value, EXCLUDED.budget_value),
+                    detected_at = NOW()
+            """)
+            bg_count = cur.rowcount
+            self.stdout.write(f"  chat_budget_detected refreshed: {bg_count} rows")
+
         elapsed = time.time() - t0
         self.stdout.write(
             self.style.SUCCESS(
