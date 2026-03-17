@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.core.cache import cache
-from django.db import connection
+from django.db import connection, transaction
 from django.http import JsonResponse
 from django.shortcuts import render
 
@@ -825,14 +825,41 @@ def dashboard_api(request):
     # Redefine: all f-string queries below will embed a trivial ref
     filtered_base_sql = "SELECT * FROM _tmp_filtered"
     filtered_base_sql_no_vendor = "SELECT * FROM _tmp_filtered_nv"
-    # Bot events CTE: reads from pre-computed bot_transfers table
-    _bot_events_cte = """
-        bot_events AS (
-            SELECT bt.chat_id, bt.transfer_ts AS bot_transfer_ts
-            FROM bot_transfers bt
-            JOIN _tmp_filtered f ON f.chat_id = bt.chat_id
-        )
-    """
+    # Bot events CTE: try pre-computed bot_transfers table, fallback to ILIKE scan
+    _has_bot_transfers = False
+    try:
+        with connection.cursor() as _ck:
+            _ck.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'bot_transfers' LIMIT 1")
+            _has_bot_transfers = bool(_ck.fetchone())
+    except Exception:
+        pass
+
+    if _has_bot_transfers:
+        _bot_events_cte = """
+            bot_events AS (
+                SELECT bt.chat_id, bt.transfer_ts AS bot_transfer_ts
+                FROM bot_transfers bt
+                JOIN _tmp_filtered f ON f.chat_id = bt.chat_id
+            )
+        """
+    else:
+        _bot_events_cte = """
+            bot_events AS (
+                SELECT
+                    sm.chat_id::text AS chat_id,
+                    MIN(sm.event_time) AS bot_transfer_ts
+                FROM smclick_message sm
+                JOIN _tmp_filtered f ON f.chat_id = sm.chat_id::text
+                WHERE sm.from_me = true AND sm.sent_by_name IS NULL
+                  AND sm.content_text IS NOT NULL
+                  AND (
+                    sm.content_text ILIKE '%%atendimento ao nosso setor de vendas%%'
+                    OR sm.content_text ILIKE '%%atendimento ao nosso time de vendas%%'
+                    OR sm.content_text ILIKE '%%encaminhar ao nosso time de vendas%%'
+                  )
+                GROUP BY sm.chat_id
+            )
+        """
 
     stats_query = f"""
         WITH filtered AS (
@@ -984,9 +1011,8 @@ def dashboard_api(request):
     """
 
     try:
-        with connection.cursor() as cursor:
+        with transaction.atomic(), connection.cursor() as cursor:
             # ── Materialize filtered base into temp tables (once, not 10×) ──
-            cursor.execute("BEGIN")
             cursor.execute(
                 f"CREATE TEMP TABLE _tmp_filtered ON COMMIT DROP AS {_create_filtered_sql}",
                 params,
@@ -1518,7 +1544,7 @@ def dashboard_api(request):
                     FROM smclick_message sm
                     JOIN bot_events b ON b.chat_id = sm.chat_id::text
                     WHERE sm.from_me = true
-                      AND (sm.sent_by_name IS NOT NULL OR (sm.content_text IS NOT NULL AND sm.content_text ~ '^\*[^*]+\*'))
+                      AND (sm.sent_by_name IS NOT NULL OR (sm.content_text IS NOT NULL AND sm.content_text ~ '^\\*[^*]+\\*'))
                       AND sm.event_time > b.bot_transfer_ts
                     GROUP BY sm.chat_id::text
                   ) _he GROUP BY chat_id
@@ -1580,7 +1606,7 @@ def dashboard_api(request):
                     FROM smclick_message sm
                     JOIN filtered f ON f.chat_id = sm.chat_id::text
                     WHERE sm.from_me = true
-                      AND (sm.sent_by_name IS NOT NULL OR (sm.content_text IS NOT NULL AND sm.content_text ~ '^\*[^*]+\*'))
+                      AND (sm.sent_by_name IS NOT NULL OR (sm.content_text IS NOT NULL AND sm.content_text ~ '^\\*[^*]+\\*'))
                     GROUP BY sm.chat_id::text
                   ) _fv GROUP BY chat_id
                 ),
@@ -1806,38 +1832,33 @@ def dashboard_api(request):
                 vendor_scores.setdefault(vendedor, []).append(
                     {"score": score, "total": total}
                 )
-            cursor.execute("COMMIT")
 
-        _response_data = {
-            "stats": stats,
-            "stage_counts": stage_counts,
-            "contacts_breakdown": {
-                "total": contacts_total,
-                "active": contacts_active,
-                "pending": contacts_pending,
-                "finalized": contacts_finalized,
-                "other": contacts_other,
-                "stages": contacts_stages,
-            },
-            "sdr": {
-                "summary": sdr_summary,
-                "daily": sdr_daily,
-                "transferred_daily": sdr_transferred_daily,
-                "members": sdr_members,
-            },
-            "vendors": {
-                "summary": vendors,
-                "scores": vendor_scores,
-            },
-        }
+            _response_data = {
+                "stats": stats,
+                "stage_counts": stage_counts,
+                "contacts_breakdown": {
+                    "total": contacts_total,
+                    "active": contacts_active,
+                    "pending": contacts_pending,
+                    "finalized": contacts_finalized,
+                    "other": contacts_other,
+                    "stages": contacts_stages,
+                },
+                "sdr": {
+                    "summary": sdr_summary,
+                    "daily": sdr_daily,
+                    "transferred_daily": sdr_transferred_daily,
+                    "members": sdr_members,
+                },
+                "vendors": {
+                    "summary": vendors,
+                    "scores": vendor_scores,
+                },
+            }
         _cache_ttl = 60 if (vendedor and vendedor != "Todos") else 180
         cache.set(_cache_key, _response_data, timeout=_cache_ttl)
         return JsonResponse(_response_data)
     except Exception as exc:
-        try:
-            connection.cursor().execute("ROLLBACK")
-        except Exception:
-            pass
         return JsonResponse({"error": str(exc)}, status=500)
 
 
@@ -2001,7 +2022,7 @@ def alerts_api(request):
         WHERE from_me = true
           AND (
             sent_by_name IS NOT NULL
-            OR (content_text IS NOT NULL AND content_text ~ '^\*[^*]+\*')
+            OR (content_text IS NOT NULL AND content_text ~ '^\\*[^*]+\\*')
           )
         GROUP BY chat_id
       ),

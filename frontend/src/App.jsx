@@ -724,7 +724,7 @@ function AppContent({ onLogout }) {
     return params.toString();
   };
 
-  const applyDashboardPreset = (preset) => {
+  const applyDashboardPreset = (preset, autoFetch = false) => {
     const now = new Date();
     let start = new Date(now);
     if (preset === "week") {
@@ -742,7 +742,9 @@ function AppContent({ onLogout }) {
     setDashboardRange(preset);
     setDashboardDateFrom(formatDateInput(start));
     setDashboardDateTo(formatDateInput(now));
-    setDashboardFetchVersion((value) => value + 1);
+    if (autoFetch) {
+      setDashboardFetchVersion((value) => value + 1);
+    }
   };
 
   // Dashboard principal: só carrega quando o usuário clica "Buscar dados"
@@ -1671,21 +1673,21 @@ function AppContent({ onLogout }) {
                   <button
                     type="button"
                     className={`range-btn${dashboardRange === "week" ? " is-active" : ""}`}
-                    onClick={() => applyDashboardPreset("week")}
+                    onClick={() => applyDashboardPreset("week", true)}
                   >
                     Semana
                   </button>
                   <button
                     type="button"
                     className={`range-btn${dashboardRange === "month" ? " is-active" : ""}`}
-                    onClick={() => applyDashboardPreset("month")}
+                    onClick={() => applyDashboardPreset("month", true)}
                   >
                     Mês
                   </button>
                   <button
                     type="button"
                     className={`range-btn${dashboardRange === "quarter" ? " is-active" : ""}`}
-                    onClick={() => applyDashboardPreset("quarter")}
+                    onClick={() => applyDashboardPreset("quarter", true)}
                   >
                     Trimestre
                   </button>
