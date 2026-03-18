@@ -2127,37 +2127,22 @@ def alerts_api(request):
         WHERE f.chat_id NOT IN (SELECT chat_id FROM post_media_text)
           AND f.current_funnel_stage NOT IN {closed_stages}
       ),
-      budget_msg_ts AS (
-        SELECT sm.chat_id::text AS chat_id, MIN(sm.event_time) AS ts
+      last_outbound AS (
+        SELECT sm.chat_id::text AS chat_id, MAX(sm.event_time) AS ts
         FROM smclick_message sm
-        JOIN filtered f ON f.chat_id = sm.chat_id::text
         WHERE sm.from_me = true
-          AND sm.content_text IS NOT NULL
-          AND translate(
-                lower(sm.content_text),
-                'áàâãäéèêëíìîïóòôõöúùûüç',
-                'aaaaaeeeeiiiiooooouuuuc'
-              ) ~ 'total\\s*[:\\-]?\\s*r\\$\\s*[0-9]'
         GROUP BY sm.chat_id
-      ),
-      post_budget_vendor_msg AS (
-        SELECT DISTINCT sm.chat_id::text AS chat_id
-        FROM smclick_message sm
-        JOIN budget_msg_ts bm ON bm.chat_id = sm.chat_id::text
-        WHERE sm.from_me = true
-          AND sm.event_time > bm.ts
       ),
       a_orcamento_sem_followup AS (
         SELECT f.chat_id, f.contact_name AS cliente_nome, f.contact_phone AS cliente_telefone,
                f.attendant_name AS vendedor_nome,
-               ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(bm.ts, f.created_at))) / 86400)::int AS extra_int
+               ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(lo.ts, f.created_at))) / 86400)::int AS extra_int
         FROM filtered f
-        LEFT JOIN budget_msg_ts bm ON bm.chat_id = f.chat_id
+        LEFT JOIN last_outbound lo ON lo.chat_id = f.chat_id
         WHERE f.budget_value IS NOT NULL AND f.budget_value > 0
           AND f.current_funnel_stage NOT IN {closed_stages}
           AND f.current_funnel_stage NOT IN {followup_stages}
-          AND f.chat_id NOT IN (SELECT chat_id FROM post_budget_vendor_msg)
-          AND COALESCE(bm.ts, f.created_at) < NOW() - INTERVAL '2 days'
+          AND COALESCE(lo.ts, f.created_at) < NOW() - INTERVAL '2 days'
       )
 
       SELECT * FROM (
