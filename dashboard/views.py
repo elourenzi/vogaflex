@@ -2127,16 +2127,30 @@ def alerts_api(request):
         WHERE f.chat_id NOT IN (SELECT chat_id FROM post_media_text)
           AND f.current_funnel_stage NOT IN {closed_stages}
       ),
+      budget_detected_ts AS (
+        SELECT cbd.chat_id, cbd.detected_at
+        FROM chat_budget_detected cbd
+        JOIN filtered f ON f.chat_id = cbd.chat_id
+        WHERE cbd.budget_value > 0
+      ),
+      post_budget_vendor_msg AS (
+        SELECT DISTINCT sm.chat_id::text AS chat_id
+        FROM smclick_message sm
+        JOIN budget_detected_ts bd ON bd.chat_id = sm.chat_id::text
+        WHERE sm.from_me = true
+          AND sm.event_time > bd.detected_at
+      ),
       a_orcamento_sem_followup AS (
         SELECT f.chat_id, f.contact_name AS cliente_nome, f.contact_phone AS cliente_telefone,
                f.attendant_name AS vendedor_nome,
-               ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(lv.ts, f.created_at))) / 86400)::int AS extra_int
+               ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(bd.detected_at, f.created_at))) / 86400)::int AS extra_int
         FROM filtered f
-        LEFT JOIN last_vendor lv ON lv.chat_id = f.chat_id
+        LEFT JOIN budget_detected_ts bd ON bd.chat_id = f.chat_id
         WHERE f.budget_value IS NOT NULL AND f.budget_value > 0
           AND f.current_funnel_stage NOT IN {closed_stages}
           AND f.current_funnel_stage NOT IN {followup_stages}
-          AND COALESCE(lv.ts, f.created_at) < NOW() - INTERVAL '2 days'
+          AND f.chat_id NOT IN (SELECT chat_id FROM post_budget_vendor_msg)
+          AND COALESCE(bd.detected_at, f.created_at) < NOW() - INTERVAL '2 days'
       )
 
       SELECT * FROM (
