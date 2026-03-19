@@ -189,6 +189,7 @@ BEGIN
     FROM public.smclick_ingest_buffer b
     LEFT JOIN public.smclick_event_log l ON l.source_buffer_id = b.id
     WHERE l.source_buffer_id IS NULL
+      AND b.processed_at IS NULL
     ORDER BY b.id
     LIMIT p_limit
   ),
