@@ -1848,6 +1848,41 @@ def alerts_api(request):
 
 @csrf_exempt
 @require_POST
+def smclick_debug(request):
+    """Temporary diagnostic endpoint to check data flow."""
+    try:
+        with connection.cursor() as cur:
+            checks = {}
+            cur.execute("SELECT COUNT(*), MAX(ingested_at) FROM smclick_ingest_buffer")
+            r = cur.fetchone()
+            checks["ingest_buffer"] = {"count": r[0], "last_ingested": str(r[1]) if r[1] else None}
+
+            cur.execute("SELECT COUNT(*), MAX(received_at) FROM smclick_event_log")
+            r = cur.fetchone()
+            checks["event_log"] = {"count": r[0], "last_received": str(r[1]) if r[1] else None}
+
+            cur.execute("SELECT COUNT(*) FROM smclick_event_log WHERE applied_at IS NULL")
+            checks["event_log_pending"] = cur.fetchone()[0]
+
+            cur.execute("SELECT COUNT(*), MAX(refreshed_at), MAX(last_event_at) FROM smclick_chat")
+            r = cur.fetchone()
+            checks["smclick_chat"] = {"count": r[0], "last_refreshed": str(r[1]) if r[1] else None, "last_event": str(r[2]) if r[2] else None}
+
+            cur.execute("SELECT COUNT(*), MAX(event_time), MAX(last_seen_at) FROM smclick_message")
+            r = cur.fetchone()
+            checks["smclick_message"] = {"count": r[0], "last_event_time": str(r[1]) if r[1] else None, "last_seen": str(r[2]) if r[2] else None}
+
+            cur.execute("SELECT COUNT(*) FROM smclick_chat WHERE refreshed_at >= NOW() - INTERVAL '24 hours'")
+            checks["chats_updated_24h"] = cur.fetchone()[0]
+
+            cur.execute("SELECT COUNT(*) FROM smclick_message WHERE last_seen_at >= NOW() - INTERVAL '24 hours'")
+            checks["messages_updated_24h"] = cur.fetchone()[0]
+
+        return JsonResponse(checks)
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+
 def smclick_webhook(request):
     """Direct webhook receiver for SmClick events.
 

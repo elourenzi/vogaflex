@@ -28,4 +28,5 @@ urlpatterns = [
         views.smclick_webhook,
         name="smclick_webhook",
     ),
+    path("api/debug/smclick/", views.smclick_debug, name="smclick_debug"),
 ]
