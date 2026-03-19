@@ -387,7 +387,7 @@ def dashboard_stage_stratification_api(request):
             f.stage_raw,
             f.created_ts,
             f.updated_ts,
-            CASE WHEN tpl.chat_id IS NOT NULL THEN true ELSE false END AS is_template_only,
+            f.is_template_only,
             CASE
               WHEN stage_norm = 'waiting' THEN 'aguardando'
               WHEN stage_norm = 'screening' THEN 'triagem'
@@ -452,7 +452,8 @@ def dashboard_stage_stratification_api(request):
                 lower(BTRIM(COALESCE(f.status_raw, ''))),
                 'áàâãäéèêëíìîïóòôõöúùûüç',
                 'aaaaaeeeeiiiiooooouuuuc'
-              ) AS status_norm
+              ) AS status_norm,
+              CASE WHEN tpl.chat_id IS NOT NULL THEN true ELSE false END AS is_template_only
             FROM filtered f
             LEFT JOIN template_only_chats tpl ON tpl.chat_id = f.chat_id
           ) f
