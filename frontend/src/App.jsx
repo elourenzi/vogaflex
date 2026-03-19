@@ -879,6 +879,7 @@ function AppContent({ onLogout }) {
   }, [activeView, dashboardTab, alertsData, alertsLoading, dashboardData, dashboardVendor]);
 
   const dashboardStats = dashboardData?.stats;
+  const contactsInteraction = dashboardData?.contacts_interaction;
   const sdrData = dashboardData?.sdr;
   const vendorData = dashboardData?.vendors;
   const sdrMemberList = useMemo(
@@ -1862,15 +1863,17 @@ function AppContent({ onLogout }) {
                           <p className="muted">Resumo consolidado da equipe · funil de conversão.</p>
                         </div>
                         {(() => {
-                          const recebidos    = vendorTotals.contacts || 0;
-                          const comInteracao = Math.max(0, recebidos - (vendorTotals.dead || 0));
+                          const recebidos    = contactsInteraction?.total || vendorTotals.contacts || 0;
+                          const comVendedor  = contactsInteraction?.com_vendedor || 0;
+                          const comBot       = contactsInteraction?.com_bot || 0;
                           const propostas    = vendorTotals.budgetsCount || 0;
                           const morreram     = vendorTotals.dead || 0;
                           const parados      = alertsData?.sem_retorno_2d?.length ?? null;
                           const semFollowup  = alertsData?.orcamento_sem_followup?.length ?? null;
                           const steps = [
-                            { label: "Contatos recebidos",     value: recebidos,    perda: null, note: "Base do período" },
-                            { label: "Contatos c/ interação",  value: comInteracao, perda: formatPercent(recebidos - comInteracao, recebidos), note: "Sem interação" },
+                            { label: "Contatos recebidos",     value: recebidos,    perda: null, note: "Todos os chats do período" },
+                            { label: "Com vendedor",           value: comVendedor,  perda: formatPercent(comVendedor, recebidos), note: "Interação humana" },
+                            { label: "Somente bot",            value: comBot,       perda: formatPercent(comBot, recebidos), note: "Sem vendedor", loss: true },
                             { label: "Parado há +2 dias",      value: parados,      perda: parados != null ? formatPercent(parados, recebidos) : null, note: "Do total", loss: true, onClick: () => parados && setAlertModalKey("sem_retorno_2d") },
                             { label: "Propostas enviadas",     value: propostas,    perda: formatPercent(recebidos - propostas, recebidos), note: "Sem proposta" },
                             { label: "Proposta sem follow-up", value: semFollowup,  perda: semFollowup != null ? formatPercent(semFollowup, propostas) : null, note: "Das propostas", loss: true, onClick: () => semFollowup && setAlertModalKey("orcamento_sem_followup") },

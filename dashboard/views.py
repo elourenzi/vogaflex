@@ -914,6 +914,34 @@ def dashboard_api(request):
             contacts_other = max(
                 contacts_total - contacts_finalized - contacts_active - contacts_pending, 0
             )
+
+            # ── Contatos Recebidos: total + estratificação COM BOT / COM VENDEDOR ──
+            contacts_interaction_query = """
+                WITH vendor_msgs AS (
+                  SELECT DISTINCT sm.chat_id::text AS chat_id
+                  FROM smclick_message sm
+                  JOIN _tmp_filtered f ON f.chat_id = sm.chat_id::text
+                  WHERE sm.from_me = true
+                    AND (
+                      sm.sent_by_name IS NOT NULL
+                      OR (sm.content_text IS NOT NULL AND sm.content_text ~ '^\\*[^*]+\\*')
+                    )
+                )
+                SELECT
+                  COUNT(*) AS total,
+                  COUNT(vm.chat_id) AS com_vendedor,
+                  COUNT(*) - COUNT(vm.chat_id) AS com_bot
+                FROM _tmp_filtered f
+                LEFT JOIN vendor_msgs vm ON vm.chat_id = f.chat_id
+            """
+            cursor.execute(contacts_interaction_query)
+            ci_row = cursor.fetchone()
+            contacts_interaction = {
+                "total": ci_row[0] if ci_row else 0,
+                "com_vendedor": ci_row[1] if ci_row else 0,
+                "com_bot": ci_row[2] if ci_row else 0,
+            }
+
             sdr_scope_sql = """
                 (
                   translate(
@@ -1556,6 +1584,7 @@ def dashboard_api(request):
                     "other": contacts_other,
                     "stages": contacts_stages,
                 },
+                "contacts_interaction": contacts_interaction,
                 "sdr": {
                     "summary": sdr_summary,
                     "daily": sdr_daily,
@@ -1760,7 +1789,7 @@ def alerts_api(request):
         JOIN last_msg lm ON lm.chat_id = f.chat_id
         WHERE lm.from_me = false
           AND f.current_funnel_stage NOT IN {closed_stages}
-          AND lm.event_time < NOW() - INTERVAL '24 hours'
+          AND lm.event_time < NOW() - INTERVAL '48 hours'
       ),
       a_aguardando AS (
         SELECT f.chat_id, f.contact_name AS cliente_nome, f.contact_phone AS cliente_telefone,
