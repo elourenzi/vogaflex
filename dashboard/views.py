@@ -831,21 +831,33 @@ def dashboard_api(request):
         LEFT JOIN business_duration bd ON bd.chat_id = f.chat_id;
     """
 
+    _reclassify_case = """
+            CASE
+              WHEN f.current_funnel_stage IN ('screening', 'waiting')
+                   AND EXISTS (
+                     SELECT 1 FROM smclick_message sm
+                     WHERE sm.chat_id::text = f.chat_id
+                       AND sm.from_me = true
+                       AND sm.sent_by_name IS NOT NULL
+                       AND sm.sent_by_name != ''
+                   )
+              THEN 'Em atendimento'
+              WHEN f.current_funnel_stage = 'screening' THEN 'Triagem'
+              WHEN f.current_funnel_stage = 'waiting' THEN 'Aguardando'
+              WHEN f.current_funnel_stage = 'active' THEN 'Em atendimento'
+              WHEN f.current_funnel_stage IN ('finished', 'closed') THEN 'Finalizado'
+              ELSE COALESCE(f.current_funnel_stage, 'Sem etapa')
+            END
+    """
+
     stage_count_query = f"""
         WITH filtered AS (
           {filtered_base_sql}
         ),
         normalized AS (
-          SELECT
-            CASE
-              WHEN current_funnel_stage = 'screening' THEN 'Triagem'
-              WHEN current_funnel_stage = 'waiting' THEN 'Aguardando'
-              WHEN current_funnel_stage = 'active' THEN 'Em atendimento'
-              WHEN current_funnel_stage IN ('finished', 'closed') THEN 'Finalizado'
-              ELSE COALESCE(current_funnel_stage, 'Sem etapa')
-            END AS stage_name
-          FROM filtered
-          WHERE current_funnel_stage IS NOT NULL
+          SELECT {_reclassify_case} AS stage_name
+          FROM filtered f
+          WHERE f.current_funnel_stage IS NOT NULL
         )
         SELECT stage_name, COUNT(*) AS total
         FROM normalized
@@ -859,16 +871,9 @@ def dashboard_api(request):
           {filtered_base_sql}
         ),
         normalized AS (
-          SELECT
-            CASE
-              WHEN current_funnel_stage = 'screening' THEN 'Triagem'
-              WHEN current_funnel_stage = 'waiting' THEN 'Aguardando'
-              WHEN current_funnel_stage = 'active' THEN 'Em atendimento'
-              WHEN current_funnel_stage IN ('finished', 'closed') THEN 'Finalizado'
-              ELSE COALESCE(current_funnel_stage, 'Sem etapa')
-            END AS stage_name
-          FROM filtered
-          WHERE attendant_name IS NOT NULL
+          SELECT {_reclassify_case} AS stage_name
+          FROM filtered f
+          WHERE f.attendant_name IS NOT NULL
         )
         SELECT stage_name, COUNT(*) AS total
         FROM normalized
