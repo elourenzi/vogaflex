@@ -1450,16 +1450,15 @@ function AppContent({ onLogout }) {
                 splitVendorNameFromContent(content);
               const fromClient = entry.msg_from_client === true;
               const apiSentBy = entry.sent_by_name || null;
-              const vendorName = apiSentBy || vendorNameFromContent;
-              const bot = !fromClient && !apiSentBy && (isBotContent(entry, content) || !vendorNameFromContent);
+              const bot = !fromClient && !apiSentBy;
               const sender = {
                 name: bot
                   ? "Bot"
                   : fromClient
                   ? selected.cliente_nome || "Cliente"
-                  : vendorName || selected.vendedor_nome || "Vendedor",
+                  : apiSentBy || selected.vendedor_nome || "Vendedor",
                 role: fromClient ? "client" : "vendor",
-                content: fromClient ? content : vendorNameFromContent ? cleanedContent : content,
+                content: vendorNameFromContent ? cleanedContent : content,
               };
               const statusText = String(entry.msg_status_envio || "").trim();
               const showStatus =
@@ -2209,16 +2208,15 @@ function AppContent({ onLogout }) {
                     splitVendorNameFromContent(content);
                   const fromClient = entry.msg_from_client === true;
                   const apiSentBy = entry.sent_by_name || null;
-                  const vendorName = apiSentBy || vendorNameFromContent;
-                  const bot = !fromClient && !apiSentBy && (isBotContent(entry, content) || !vendorNameFromContent);
+                  const bot = !fromClient && !apiSentBy;
                   const sender = {
                     name: bot
                       ? "Bot"
                       : fromClient
                       ? stageClientModal.cliente_nome || "Cliente"
-                      : vendorName || stageClientModal.vendedor_nome || "Vendedor",
+                      : apiSentBy || stageClientModal.vendedor_nome || "Vendedor",
                     role: fromClient ? "client" : "vendor",
-                    content: fromClient ? content : vendorNameFromContent ? cleanedContent : content,
+                    content: vendorNameFromContent ? cleanedContent : content,
                   };
                   const statusText = String(entry.msg_status_envio || "").trim();
                   const showStatus = statusText && statusText.toLowerCase() !== "true";

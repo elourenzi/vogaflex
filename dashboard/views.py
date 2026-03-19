@@ -229,10 +229,10 @@ def conversations_api(request):
             COALESCE(sc.last_event_at, sc.refreshed_at, sc.chat_updated_at) AS updated_at,
             sc.inserted_at AS created_at,
             CASE
-              WHEN LOWER(COALESCE(sc.status, '')) IN ('screening', 'triagem') THEN 'Triagem'
-              WHEN LOWER(COALESCE(sc.status, '')) IN ('waiting', 'em espera', 'aguardando') THEN 'Aguardando'
-              WHEN LOWER(COALESCE(sc.status, '')) IN ('em atendimento', 'active') THEN 'Em atendimento'
-              WHEN LOWER(COALESCE(sc.status, '')) IN ('finalizado', 'finished', 'closed') THEN 'Finalizado'
+              WHEN sc.status = 'screening' THEN 'Triagem'
+              WHEN sc.status = 'waiting' THEN 'Aguardando'
+              WHEN sc.status = 'active' THEN 'Em atendimento'
+              WHEN sc.status IN ('finished', 'closed') THEN 'Finalizado'
               ELSE NULL
             END AS status_normalizado
           FROM smclick_chat sc
@@ -379,10 +379,10 @@ def dashboard_stage_stratification_api(request):
             f.created_ts,
             f.updated_ts,
             CASE
-              WHEN stage_norm IN ('waiting', 'em espera', 'aguardando') THEN 'aguardando'
-              WHEN stage_norm IN ('screening', 'triagem') THEN 'triagem'
+              WHEN stage_norm = 'waiting' THEN 'aguardando'
+              WHEN stage_norm = 'screening' THEN 'triagem'
+              WHEN stage_norm = 'active' THEN 'ativo'
               WHEN stage_norm IN ('em atendimento') THEN 'em_atendimento'
-              WHEN stage_norm IN ('active', 'ativo') THEN 'ativo'
               WHEN stage_norm IN ('cadastro') THEN 'cadastro'
               WHEN stage_norm IN ('contato feito') THEN 'chamada_1'
               WHEN stage_norm ~ '^1[aª]? ?chamada$' THEN 'chamada_1'
@@ -391,21 +391,21 @@ def dashboard_stage_stratification_api(request):
               WHEN stage_norm ~ '^3[aª]? ?chamada$' THEN 'chamada_3'
               WHEN stage_norm IN ('proposta enviada') THEN 'proposta_enviada'
               WHEN stage_norm IN ('pos-vendas', 'pos vendas', 'posvendas', 'pos-venda', 'pos venda', 'recompra') THEN 'pos_vendas'
-              WHEN stage_norm IN ('finalizado') THEN 'finalizado'
+              WHEN stage_norm IN ('finished', 'closed') THEN 'finalizado'
               WHEN stage_norm IN ('lixo') THEN 'lixo'
               WHEN stage_norm = '' THEN
                 CASE
-                  WHEN status_norm IN ('active', 'ativo') THEN 'ativo'
-                  WHEN status_norm IN ('waiting', 'aguardando', 'em espera') THEN 'aguardando'
+                  WHEN status_norm = 'active' THEN 'ativo'
+                  WHEN status_norm = 'waiting' THEN 'aguardando'
                   ELSE 'triagem'
                 END
               ELSE NULL
             END AS stage_key,
             CASE
-              WHEN stage_norm IN ('waiting', 'em espera', 'aguardando') THEN 1
-              WHEN stage_norm IN ('screening', 'triagem') THEN 2
+              WHEN stage_norm = 'waiting' THEN 1
+              WHEN stage_norm = 'screening' THEN 2
               WHEN stage_norm IN ('em atendimento') THEN 3
-              WHEN stage_norm IN ('active', 'ativo') THEN 4
+              WHEN stage_norm = 'active' THEN 4
               WHEN stage_norm IN ('cadastro') THEN 5
               WHEN stage_norm IN ('contato feito') THEN 6
               WHEN stage_norm ~ '^1[aª]? ?chamada$' THEN 6
@@ -414,12 +414,12 @@ def dashboard_stage_stratification_api(request):
               WHEN stage_norm ~ '^3[aª]? ?chamada$' THEN 8
               WHEN stage_norm IN ('proposta enviada') THEN 9
               WHEN stage_norm IN ('pos-vendas', 'pos vendas', 'posvendas', 'pos-venda', 'pos venda', 'recompra') THEN 10
-              WHEN stage_norm IN ('finalizado') THEN 11
+              WHEN stage_norm IN ('finished', 'closed') THEN 11
               WHEN stage_norm IN ('lixo') THEN 12
               WHEN stage_norm = '' THEN
                 CASE
-                  WHEN status_norm IN ('active', 'ativo') THEN 4
-                  WHEN status_norm IN ('waiting', 'aguardando', 'em espera') THEN 1
+                  WHEN status_norm = 'active' THEN 4
+                  WHEN status_norm = 'waiting' THEN 1
                   ELSE 2
                 END
               ELSE NULL
@@ -541,17 +541,13 @@ def dashboard_api(request):
     params = []
     if status and status != "Todos":
         if status == "Triagem":
-            where_clauses.append("c.current_funnel_stage = %s")
-            params.append("screening")
+            where_clauses.append("c.current_funnel_stage = 'screening'")
         elif status == "Aguardando":
-            where_clauses.append("c.current_funnel_stage IN (%s, %s)")
-            params.extend(["waiting", "Em espera"])
+            where_clauses.append("c.current_funnel_stage = 'waiting'")
         elif status == "Em atendimento":
-            where_clauses.append("c.current_funnel_stage = %s")
-            params.append("Em atendimento")
+            where_clauses.append("c.current_funnel_stage = 'active'")
         elif status == "Finalizado":
-            where_clauses.append("c.current_funnel_stage IN (%s, %s, %s)")
-            params.extend(["Finalizado", "finished", "closed"])
+            where_clauses.append("c.current_funnel_stage IN ('finished', 'closed')")
     if etapa and etapa != "Todos":
         where_clauses.append("c.current_funnel_stage = %s")
         params.append(etapa)
@@ -736,7 +732,7 @@ def dashboard_api(request):
           FROM filtered f
           WHERE COALESCE(f.start_time, f.created_at) IS NOT NULL
             AND f.end_time IS NOT NULL
-            AND LOWER(COALESCE(f.current_funnel_stage, '')) IN ('finalizado', 'finished', 'closed')
+            AND f.current_funnel_stage IN ('finished', 'closed')
         ),
         business_duration AS (
           SELECT
@@ -822,10 +818,9 @@ def dashboard_api(request):
           SELECT
             CASE
               WHEN current_funnel_stage = 'screening' THEN 'Triagem'
-              WHEN current_funnel_stage IN ('waiting', 'Em espera') THEN 'Aguardando'
-              WHEN current_funnel_stage = 'Em atendimento' THEN 'Em atendimento'
-              WHEN current_funnel_stage IN ('Finalizado', 'finished', 'closed') THEN 'Finalizado'
-              WHEN current_funnel_stage = 'active' THEN NULL
+              WHEN current_funnel_stage = 'waiting' THEN 'Aguardando'
+              WHEN current_funnel_stage = 'active' THEN 'Em atendimento'
+              WHEN current_funnel_stage IN ('finished', 'closed') THEN 'Finalizado'
               ELSE COALESCE(current_funnel_stage, 'Sem etapa')
             END AS stage_name
           FROM filtered
@@ -846,10 +841,9 @@ def dashboard_api(request):
           SELECT
             CASE
               WHEN current_funnel_stage = 'screening' THEN 'Triagem'
-              WHEN current_funnel_stage IN ('waiting', 'Em espera') THEN 'Aguardando'
-              WHEN current_funnel_stage = 'Em atendimento' THEN 'Em atendimento'
-              WHEN current_funnel_stage IN ('Finalizado', 'finalizado', 'finished', 'closed') THEN 'Finalizado'
-              WHEN current_funnel_stage = 'active' THEN 'Ativo'
+              WHEN current_funnel_stage = 'waiting' THEN 'Aguardando'
+              WHEN current_funnel_stage = 'active' THEN 'Em atendimento'
+              WHEN current_funnel_stage IN ('finished', 'closed') THEN 'Finalizado'
               ELSE COALESCE(current_funnel_stage, 'Sem etapa')
             END AS stage_name
           FROM filtered
@@ -907,7 +901,7 @@ def dashboard_api(request):
                 name = str(stage["stage_name"]).strip().lower()
                 if name == "finalizado":
                     contacts_finalized += stage["total"]
-                elif name in ("em atendimento", "ativo"):
+                elif name == "em atendimento":
                     contacts_active += stage["total"]
                 elif name in ("triagem", "aguardando"):
                     contacts_pending += stage["total"]
@@ -922,10 +916,7 @@ def dashboard_api(request):
                   FROM smclick_message sm
                   JOIN _tmp_filtered f ON f.chat_id = sm.chat_id::text
                   WHERE sm.from_me = true
-                    AND (
-                      sm.sent_by_name IS NOT NULL
-                      OR (sm.content_text IS NOT NULL AND sm.content_text ~ '^\\*[^*]+\\*')
-                    )
+                    AND sm.sent_by_name IS NOT NULL
                 )
                 SELECT
                   COUNT(*) AS total,
@@ -1003,7 +994,7 @@ def dashboard_api(request):
                        OR cl.owner_norm ~ '(sac|pos[- ]?venda|duvidas?|suporte)'
                   ) AS total_sac,
                   COUNT(*) FILTER (
-                    WHERE cl.stage_norm IN ('waiting', 'em espera', 'aguardando')
+                    WHERE cl.stage_norm = 'waiting'
                        OR cl.owner_norm ~ '(waiting|em espera|aguardando)'
                   ) AS total_waiting,
                   COUNT(*) FILTER (
@@ -1011,7 +1002,7 @@ def dashboard_api(request):
                         f.attendant_name IS NOT NULL
                         OR cl.owner_norm ~ '(vendas|venda|comercial)'
                     )
-                      AND cl.stage_norm NOT IN ('waiting', 'em espera', 'aguardando')
+                      AND cl.stage_norm != 'waiting'
                       AND cl.reason_norm !~ '(sac|pos[- ]?venda|duvidas?|suporte|rastreio)'
                       AND cl.owner_norm !~ '(sac|pos[- ]?venda|duvidas?|suporte|rastreio|waiting|em espera|aguardando)'
                   ) AS total_sales,
@@ -1070,7 +1061,7 @@ def dashboard_api(request):
                         f.attendant_name IS NOT NULL
                         OR cl.owner_norm ~ '(vendas|venda|comercial)'
                     )
-                      AND cl.stage_norm NOT IN ('waiting', 'em espera', 'aguardando')
+                      AND cl.stage_norm != 'waiting'
                       AND cl.reason_norm !~ '(sac|pos[- ]?venda|duvidas?|suporte|rastreio)'
                       AND cl.owner_norm !~ '(sac|pos[- ]?venda|duvidas?|suporte|rastreio|waiting|em espera|aguardando)'
                   ) AS sales,
@@ -1083,7 +1074,7 @@ def dashboard_api(request):
                        OR cl.owner_norm ~ '(sac|pos[- ]?venda|duvidas?|suporte)'
                   ) AS sac,
                   COUNT(*) FILTER (
-                    WHERE cl.stage_norm IN ('waiting', 'em espera', 'aguardando')
+                    WHERE cl.stage_norm = 'waiting'
                        OR cl.owner_norm ~ '(waiting|em espera|aguardando)'
                   ) AS waiting,
                   COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS dead
@@ -1213,8 +1204,7 @@ def dashboard_api(request):
                     SELECT
                       f.attendant_name AS vendedor,
                       COUNT(*) FILTER (
-                        WHERE LOWER(COALESCE(f.current_funnel_stage, '')) NOT IN
-                          ('finalizado', 'finished', 'closed', 'lixo')
+                        WHERE f.current_funnel_stage NOT IN ('finished', 'closed')
                       ) AS contacts_received,
                       COUNT(*) FILTER (
                         WHERE COALESCE(f.budget_value, 0) > 0
@@ -1279,7 +1269,7 @@ def dashboard_api(request):
                   FROM filtered f
                   WHERE COALESCE(f.start_time, f.created_at) IS NOT NULL
                     AND f.end_time IS NOT NULL
-                    AND LOWER(COALESCE(f.current_funnel_stage, '')) IN ('finalizado', 'finished', 'closed')
+                    AND f.current_funnel_stage IN ('finished', 'closed')
                 ),
                 {_budget_values_cte},
                 business_duration AS (
@@ -1430,7 +1420,7 @@ def dashboard_api(request):
                 SELECT
                   f.attendant_name AS vendedor,
                   COUNT(*) FILTER (
-                    WHERE LOWER(COALESCE(f.current_funnel_stage, '')) NOT IN ('finalizado', 'finished', 'closed', 'lixo')
+                    WHERE f.current_funnel_stage NOT IN ('finished', 'closed')
                   ) AS contacts_received,
                   COUNT(*) FILTER (
                     WHERE COALESCE(sbv.budget_value, 0) > 0
@@ -1713,7 +1703,7 @@ def alerts_api(request):
       FROM smclick_chat sc WHERE sc.chat_id IS NOT NULL
     """
 
-    closed_stages = "('finished','closed','Finalizado','finalizado','Lixo','lixo')"
+    closed_stages = "('finished','closed')"
     followup_stages = """(
         'Contato feito','contato feito','Contato feito 2','contato feito 2',
         '1ª chamada','1a chamada','2ª chamada','2a chamada','3ª chamada','3a chamada',
