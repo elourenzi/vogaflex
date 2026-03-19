@@ -1163,8 +1163,8 @@ def dashboard_api(request):
                         WHERE LOWER(COALESCE(f.current_stage, '')) = 'proposta enviada'
                           OR COALESCE(f.budget_value, 0) > 0
                       ) AS budgets_detected_count,
-                      COALESCE(SUM(CASE WHEN COALESCE(f.budget_value, 0) > 0 THEN f.budget_value ELSE 0 END), 0) AS budgets_sum,
-                      COALESCE(SUM(CASE WHEN COALESCE(f.budget_value, 0) > 0 THEN f.budget_value ELSE 0 END), 0) AS budgets_sum_detected,
+                      COALESCE(SUM(CASE WHEN f.budget_value > 0 AND f.budget_value <= 30000 THEN f.budget_value ELSE 0 END), 0) AS budgets_sum,
+                      COALESCE(SUM(CASE WHEN f.budget_value > 0 AND f.budget_value <= 30000 THEN f.budget_value ELSE 0 END), 0) AS budgets_sum_detected,
                       0 AS dead_contacts,
                       0::float AS avg_duration_seconds,
                       0::float AS avg_handoff_seconds,
@@ -1366,11 +1366,11 @@ def dashboard_api(request):
                       OR COALESCE(f.budget_value, 0) > 0
                   ) AS budgets_detected_count,
                   COALESCE(
-                    SUM(CASE WHEN COALESCE(f.budget_value, 0) > 0 THEN f.budget_value ELSE 0 END),
+                    SUM(CASE WHEN f.budget_value > 0 AND f.budget_value <= 30000 THEN f.budget_value ELSE 0 END),
                     0
                   ) AS budgets_sum,
                   COALESCE(
-                    SUM(CASE WHEN COALESCE(f.budget_value, 0) > 0 THEN f.budget_value ELSE 0 END),
+                    SUM(CASE WHEN f.budget_value > 0 AND f.budget_value <= 30000 THEN f.budget_value ELSE 0 END),
                     0
                   ) AS budgets_sum_detected,
                   COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS dead_contacts,
