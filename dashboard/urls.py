@@ -29,4 +29,5 @@ urlpatterns = [
         name="smclick_webhook",
     ),
     path("api/debug/smclick/", views.smclick_debug, name="smclick_debug"),
+    path("api/debug/force-sync/", views.smclick_force_sync, name="smclick_force_sync"),
 ]

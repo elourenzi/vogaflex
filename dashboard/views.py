@@ -2026,6 +2026,19 @@ def smclick_debug(request):
 
 
 @csrf_exempt
+def smclick_force_sync(request):
+    """Trigger sync_smclick manually."""
+    from django.core.management import call_command
+    import io
+    out = io.StringIO()
+    try:
+        call_command("sync_smclick", stdout=out)
+        return JsonResponse({"ok": True, "output": out.getvalue()})
+    except Exception as exc:
+        return JsonResponse({"ok": False, "error": str(exc), "output": out.getvalue()}, status=500)
+
+
+@csrf_exempt
 @require_POST
 def smclick_webhook(request):
     """Direct webhook receiver for SmClick events.
