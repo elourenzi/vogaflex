@@ -1153,19 +1153,17 @@ def dashboard_api(request):
                     )
                     ,
                     checkout_chats AS (
-                      SELECT DISTINCT sm.chat_id::text AS chat_id
+                      SELECT DISTINCT sm.chat_id::text AS chat_id,
+                        (regexp_matches(sm.content_text, 'checkout/finalizar\\?id=([0-9]+)'))[1] AS order_id
                       FROM smclick_message sm
                       JOIN filtered f ON f.chat_id = sm.chat_id::text
                       WHERE sm.from_me = true
                         AND sm.content_text ILIKE '%%vogaflex.com.br/checkout/finalizar%%'
                     ),
                     purchased_chats AS (
-                      SELECT DISTINCT f.chat_id
-                      FROM filtered f
-                      JOIN vogaflex_order vo ON
-                        vo.telefone_norm = f.contact_phone
-                        OR (LENGTH(vo.telefone_norm) = 13 AND LEFT(vo.telefone_norm, 4) || SUBSTRING(vo.telefone_norm FROM 6) = f.contact_phone)
-                        OR (LENGTH(f.contact_phone) = 12 AND LEFT(f.contact_phone, 4) || '9' || SUBSTRING(f.contact_phone FROM 5) = vo.telefone_norm)
+                      SELECT DISTINCT ck.chat_id
+                      FROM checkout_chats ck
+                      JOIN vogaflex_order vo ON vo.order_id = ck.order_id
                       WHERE vo.status != 'CANCELADO'
                     )
                     SELECT
@@ -1375,19 +1373,17 @@ def dashboard_api(request):
                   LEFT JOIN direct_duration_business ddb ON ddb.chat_id = f.chat_id
                 ),
                 checkout_chats AS (
-                  SELECT DISTINCT sm.chat_id::text AS chat_id
+                  SELECT DISTINCT sm.chat_id::text AS chat_id,
+                    (regexp_matches(sm.content_text, 'checkout/finalizar\\?id=([0-9]+)'))[1] AS order_id
                   FROM smclick_message sm
                   JOIN filtered f ON f.chat_id = sm.chat_id::text
                   WHERE sm.from_me = true
                     AND sm.content_text ILIKE '%%vogaflex.com.br/checkout/finalizar%%'
                 ),
                 purchased_chats AS (
-                  SELECT DISTINCT f.chat_id
-                  FROM filtered f
-                  JOIN vogaflex_order vo ON
-                    vo.telefone_norm = f.contact_phone
-                    OR (LENGTH(vo.telefone_norm) = 13 AND LEFT(vo.telefone_norm, 4) || SUBSTRING(vo.telefone_norm FROM 6) = f.contact_phone)
-                    OR (LENGTH(f.contact_phone) = 12 AND LEFT(f.contact_phone, 4) || '9' || SUBSTRING(f.contact_phone FROM 5) = vo.telefone_norm)
+                  SELECT DISTINCT ck.chat_id
+                  FROM checkout_chats ck
+                  JOIN vogaflex_order vo ON vo.order_id = ck.order_id
                   WHERE vo.status != 'CANCELADO'
                 )
                 SELECT
