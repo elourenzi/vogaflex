@@ -2025,6 +2025,8 @@ def smclick_debug(request):
         return JsonResponse({"error": str(exc)}, status=500)
 
 
+@csrf_exempt
+@require_POST
 def smclick_webhook(request):
     """Direct webhook receiver for SmClick events.
 
