@@ -130,59 +130,24 @@ def _owners_view_id_column():
 def _messages_union_sql():
     return """
         SELECT
-          0 AS source_priority,
           (sm.chat_id::text || '|' || sm.message_id) AS source_id,
           sm.chat_id::text AS chat_id,
-          sm.evento_timestamp,
-          NULLIF(BTRIM(COALESCE(sm.msg_tipo, '')), '') AS msg_tipo,
-          NULLIF(BTRIM(COALESCE(sm.msg_conteudo, '')), '') AS msg_conteudo,
-          sm.msg_from_client,
-          sm.msg_status_envio,
-          NULLIF(BTRIM(COALESCE(sm.sent_by_name, '')), '') AS sent_by_name
-        FROM vw_smclick_messages_timeline sm
-        WHERE sm.chat_id IS NOT NULL
-
-        UNION ALL
-
-        SELECT
-          1 AS source_priority,
-          sm.id::text AS source_id,
-          sm.chat_id::text AS chat_id,
-          COALESCE(sm.message_time, sm.created_at) AS evento_timestamp,
-          NULLIF(BTRIM(COALESCE(sm.msg_tipo, '')), '') AS msg_tipo,
-          NULLIF(BTRIM(COALESCE(sm.msg_conteudo, '')), '') AS msg_conteudo,
+          COALESCE(sm.event_time, sm.sent_at) AS evento_timestamp,
+          NULLIF(BTRIM(COALESCE(sm.message_type, '')), '') AS msg_tipo,
+          NULLIF(BTRIM(COALESCE(sm.content_original_text, sm.content_text, '')), '') AS msg_conteudo,
           CASE
-            WHEN LOWER(COALESCE(sm.author_type, '')) IN ('client', 'customer', 'contato', 'cliente', 'inbound') THEN TRUE
-            WHEN LOWER(COALESCE(sm.author_type, '')) IN ('agent', 'attendant', 'vendedor', 'seller', 'outbound', 'system', 'bot') THEN FALSE
+            WHEN sm.from_me IS TRUE THEN FALSE
+            WHEN sm.from_me IS FALSE THEN TRUE
             ELSE NULL
           END AS msg_from_client,
           CASE
-            WHEN sm.msg_status_envio IS TRUE THEN NULL
-            WHEN sm.msg_status_envio IS FALSE THEN COALESCE(NULLIF(BTRIM(sm.msg_erro_motivo), ''), 'false')
+            WHEN sm.message_status IS TRUE THEN NULL
+            WHEN sm.message_status IS FALSE THEN COALESCE(NULLIF(BTRIM(sm.fail_reason), ''), 'false')
             ELSE NULL
           END AS msg_status_envio,
-          NULLIF(BTRIM(COALESCE(sm.author_name, '')), '') AS sent_by_name
-        FROM semclick_messages sm
+          NULLIF(BTRIM(COALESCE(sm.sent_by_name, '')), '') AS sent_by_name
+        FROM smclick_message sm
         WHERE sm.chat_id IS NOT NULL
-
-        UNION ALL
-
-        SELECT
-          2 AS source_priority,
-          COALESCE(m.message_id::text, md5(COALESCE(m.chat_id::text, '') || '|' || COALESCE(m."timestamp"::text, '') || '|' || COALESCE(m.content, ''))) AS source_id,
-          m.chat_id::text AS chat_id,
-          m."timestamp" AS evento_timestamp,
-          NULLIF(BTRIM(COALESCE(m.message_type, '')), '') AS msg_tipo,
-          NULLIF(BTRIM(COALESCE(m.content, '')), '') AS msg_conteudo,
-          CASE
-            WHEN m.from_client IS TRUE THEN TRUE
-            WHEN m.from_client IS FALSE THEN FALSE
-            ELSE NULL
-          END AS msg_from_client,
-          NULL::text AS msg_status_envio,
-          NULL::text AS sent_by_name
-        FROM messages m
-        WHERE m.chat_id IS NOT NULL
     """
 
 
@@ -197,7 +162,6 @@ def conversations_api(request):
 
     where_clauses = []
     params = []
-    messages_union_sql = _messages_union_sql()
     if status and status != "Todos":
         where_clauses.append("c.status_normalizado = %s")
         params.append(status)
@@ -210,7 +174,6 @@ def conversations_api(request):
         )
         params.append(date_from)
     elif not date_to:
-        # sem filtro de data: limita aos últimos 30 dias como padrão de segurança
         where_clauses.append(
             "COALESCE(c.updated_at, c.data_criacao_chat, c.created_at)::date >= (CURRENT_DATE - INTERVAL '30 days')::date"
         )
@@ -228,106 +191,52 @@ def conversations_api(request):
         where_sql = "WHERE " + " AND ".join(where_clauses)
 
     query = f"""
-        WITH messages_union AS (
-          {messages_union_sql}
-        ),
-        latest_message AS (
-          SELECT DISTINCT ON (mu.chat_id)
-            mu.chat_id,
-            mu.msg_tipo,
-            mu.msg_conteudo,
-            mu.msg_from_client,
-            mu.msg_status_envio,
-            mu.evento_timestamp
-          FROM messages_union mu
-          ORDER BY mu.chat_id, mu.evento_timestamp DESC NULLS LAST, mu.source_priority ASC, mu.source_id DESC
-        ),
-        conv_sources AS (
-          SELECT
-            0 AS source_priority,
-            c.chat_id::text AS chat_id,
-            to_jsonb(c) AS j
-          FROM vw_smclick_conversations_latest c
-          WHERE c.chat_id IS NOT NULL
-
-          UNION ALL
-
-          SELECT
-            1 AS source_priority,
-            c.chat_id::text AS chat_id,
-            to_jsonb(c) AS j
-          FROM semclick_conversations c
-          WHERE c.chat_id IS NOT NULL
-
-          UNION ALL
-
-          SELECT
-            2 AS source_priority,
-            c.chat_id::text AS chat_id,
-            to_jsonb(c) AS j
-          FROM conversations c
-          WHERE c.chat_id IS NOT NULL
+        WITH latest_message AS (
+          SELECT DISTINCT ON (sm.chat_id)
+            sm.chat_id::text AS chat_id,
+            NULLIF(BTRIM(COALESCE(sm.message_type, '')), '') AS msg_tipo,
+            NULLIF(BTRIM(COALESCE(sm.content_original_text, sm.content_text, '')), '') AS msg_conteudo,
+            CASE WHEN sm.from_me IS TRUE THEN FALSE
+                 WHEN sm.from_me IS FALSE THEN TRUE
+                 ELSE NULL
+            END AS msg_from_client,
+            CASE WHEN sm.message_status IS TRUE THEN NULL
+                 WHEN sm.message_status IS FALSE THEN COALESCE(NULLIF(BTRIM(sm.fail_reason), ''), 'false')
+                 ELSE NULL
+            END AS msg_status_envio,
+            COALESCE(sm.event_time, sm.sent_at) AS evento_timestamp
+          FROM smclick_message sm
+          ORDER BY sm.chat_id, COALESCE(sm.event_time, sm.sent_at) DESC NULLS LAST
         ),
         conv AS (
-          SELECT DISTINCT ON (src.chat_id)
-            src.chat_id,
-            NULLIF(BTRIM(COALESCE(src.j->>'protocolo', src.j->>'protocol', '')), '') AS protocolo,
-            NULLIF(BTRIM(COALESCE(src.j->>'cliente_nome', src.j->>'customer_name', '')), '') AS cliente_nome,
-            NULLIF(BTRIM(COALESCE(src.j->>'cliente_telefone', src.j->>'customer_phone', '')), '') AS cliente_telefone,
-            NULLIF(BTRIM(COALESCE(src.j->>'vendedor_nome', src.j->>'attendant_name', src.j->>'current_attendant_name', '')), '') AS vendedor_nome,
-            NULLIF(BTRIM(COALESCE(src.j->>'vendedor_email', src.j->>'attendant_email', '')), '') AS vendedor_email,
-            NULLIF(BTRIM(COALESCE(src.j->>'status_conversa', src.j->>'current_funnel_stage', src.j->>'status', '')), '') AS status_conversa,
-            NULLIF(BTRIM(COALESCE(src.j->>'etapa_funil_atual', src.j->>'etapa_funil', src.j->>'funnel_stage', src.j->>'current_funnel_stage', src.j->>'coluna_kanban', src.j->>'kanban_column', '')), '') AS etapa_funil,
-            NULLIF(BTRIM(COALESCE(src.j->>'departamento', src.j->>'department_name', '')), '') AS departamento,
-            NULLIF(BTRIM(COALESCE(src.j->>'coluna_kanban', src.j->>'kanban_column', '')), '') AS coluna_kanban,
-            NULLIF(BTRIM(COALESCE(src.j->>'motivo_perda_atual', src.j->>'motivo_perda', src.j->>'finish_reason', '')), '') AS motivo_perda,
-            NULLIF(BTRIM(COALESCE(src.j->>'produto_interesse_atual', src.j->>'produto_interesse', '')), '') AS produto_interesse,
-            NULLIF(BTRIM(COALESCE(src.j->>'ai_agent_rating', '')), '') AS ai_agent_rating,
-            NULLIF(BTRIM(COALESCE(src.j->>'ai_customer_sentiment', '')), '') AS ai_customer_sentiment,
-            NULLIF(BTRIM(COALESCE(src.j->>'ai_summary', '')), '') AS ai_summary,
-            NULLIF(BTRIM(COALESCE(src.j->>'ai_suggestion', '')), '') AS ai_suggestion,
-            NULLIF(BTRIM(COALESCE(src.j->>'contact_reason', '')), '') AS contact_reason,
-            CASE
-              WHEN NULLIF(BTRIM(COALESCE(src.j->>'data_criacao_chat', src.j->>'start_time', src.j->>'created_at', '')), '') ~ '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-                THEN NULLIF(BTRIM(COALESCE(src.j->>'data_criacao_chat', src.j->>'start_time', src.j->>'created_at', '')), '')::timestamptz
-              ELSE NULL
-            END AS data_criacao_chat,
-            CASE
-              WHEN NULLIF(BTRIM(COALESCE(src.j->>'data_fechamento_atual', src.j->>'data_fechamento', src.j->>'end_time', '')), '') ~ '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-                THEN NULLIF(BTRIM(COALESCE(src.j->>'data_fechamento_atual', src.j->>'data_fechamento', src.j->>'end_time', '')), '')::timestamptz
-              ELSE NULL
-            END AS data_fechamento,
-            CASE
-              WHEN NULLIF(BTRIM(COALESCE(src.j->>'updated_at', src.j->>'ultima_atualizacao', src.j->>'evento_timestamp', src.j->>'start_time', src.j->>'created_at', '')), '') ~ '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-                THEN NULLIF(BTRIM(COALESCE(src.j->>'updated_at', src.j->>'ultima_atualizacao', src.j->>'evento_timestamp', src.j->>'start_time', src.j->>'created_at', '')), '')::timestamptz
-              ELSE NULL
-            END AS updated_at,
-            CASE
-              WHEN NULLIF(BTRIM(COALESCE(src.j->>'created_at', src.j->>'data_criacao_chat', src.j->>'start_time', '')), '') ~ '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-                THEN NULLIF(BTRIM(COALESCE(src.j->>'created_at', src.j->>'data_criacao_chat', src.j->>'start_time', '')), '')::timestamptz
-              ELSE NULL
-            END AS created_at,
-            COALESCE(
-              NULLIF(BTRIM(COALESCE(src.j->>'valor_orcamento_atual', src.j->>'valor_orcamento', src.j->>'budget_value', '')), ''),
-              '0'
-            ) AS valor_orcamento,
-            NULLIF(BTRIM(COALESCE(src.j->>'valor_pedido', src.j->>'order_value', '')), '') AS valor_pedido
-          FROM conv_sources src
-          ORDER BY src.chat_id, src.source_priority ASC
-        ),
-        conv_enriched AS (
           SELECT
-            c.*,
+            sc.chat_id::text AS chat_id,
+            sc.protocol::text AS protocolo,
+            sc.contact_name AS cliente_nome,
+            sc.contact_phone AS cliente_telefone,
+            sc.attendant_name AS vendedor_nome,
+            sc.attendant_email AS vendedor_email,
+            sc.status AS status_conversa,
+            sc.current_stage AS etapa_funil,
+            sc.department_name AS departamento,
+            sc.current_stage AS coluna_kanban,
+            sc.chat_created_at AS data_criacao_chat,
+            CASE WHEN sc.status IN ('finished', 'closed') THEN sc.chat_updated_at ELSE NULL END AS data_fechamento,
+            COALESCE(sc.budget_value, 0) AS valor_orcamento,
+            sc.order_value AS valor_pedido,
+            sc.loss_reason AS motivo_perda,
+            sc.product AS produto_interesse,
+            sc.chat_updated_at AS updated_at,
+            sc.inserted_at AS created_at,
             CASE
-              WHEN LOWER(COALESCE(c.status_conversa, '')) IN ('screening', 'triagem') THEN 'Triagem'
-              WHEN LOWER(COALESCE(c.status_conversa, '')) IN ('waiting', 'em espera', 'aguardando') THEN 'Aguardando'
-              WHEN LOWER(COALESCE(c.status_conversa, '')) IN ('em atendimento', 'active') THEN 'Em atendimento'
-              WHEN LOWER(COALESCE(c.status_conversa, '')) IN ('finalizado', 'finished', 'closed') THEN 'Finalizado'
-              WHEN LOWER(COALESCE(c.etapa_funil, '')) IN ('finalizado', 'finished', 'closed') THEN 'Finalizado'
-              WHEN LOWER(COALESCE(c.coluna_kanban, '')) IN ('finalizado', 'finished', 'closed') THEN 'Finalizado'
+              WHEN LOWER(COALESCE(sc.status, '')) IN ('screening', 'triagem') THEN 'Triagem'
+              WHEN LOWER(COALESCE(sc.status, '')) IN ('waiting', 'em espera', 'aguardando') THEN 'Aguardando'
+              WHEN LOWER(COALESCE(sc.status, '')) IN ('em atendimento', 'active') THEN 'Em atendimento'
+              WHEN LOWER(COALESCE(sc.status, '')) IN ('finalizado', 'finished', 'closed') THEN 'Finalizado'
               ELSE NULL
             END AS status_normalizado
-          FROM conv c
+          FROM smclick_chat sc
+          WHERE sc.chat_id IS NOT NULL
         )
         SELECT
           c.chat_id,
@@ -347,11 +256,6 @@ def conversations_api(request):
           c.valor_pedido,
           c.motivo_perda,
           c.produto_interesse,
-          c.ai_agent_rating,
-          c.ai_customer_sentiment,
-          c.ai_summary,
-          c.ai_suggestion,
-          c.contact_reason,
           c.updated_at,
           c.created_at,
           lm.msg_tipo,
@@ -359,7 +263,7 @@ def conversations_api(request):
           lm.msg_status_envio,
           lm.evento_timestamp,
           lm.msg_from_client
-        FROM conv_enriched c
+        FROM conv c
         LEFT JOIN latest_message lm ON lm.chat_id = c.chat_id
         {where_sql}
         ORDER BY COALESCE(lm.evento_timestamp, c.updated_at, c.data_criacao_chat, c.created_at) DESC
@@ -383,49 +287,26 @@ def messages_api(request):
     limit = int(request.GET.get("limit", "500"))
     offset = int(request.GET.get("offset", "0"))
 
-    messages_union_sql = _messages_union_sql()
-    query = f"""
-        WITH messages_union AS (
-          {messages_union_sql}
-        ),
-        ranked AS (
-          SELECT
-            mu.source_id AS id,
-            mu.chat_id,
-            mu.evento_timestamp,
-            mu.msg_conteudo,
-            mu.msg_tipo,
-            mu.msg_from_client,
-            mu.msg_status_envio,
-            mu.sent_by_name,
-            ROW_NUMBER() OVER (
-              PARTITION BY
-                mu.chat_id,
-                mu.evento_timestamp,
-                mu.msg_from_client,
-                COALESCE(mu.msg_tipo, ''),
-                COALESCE(mu.msg_conteudo, '')
-              ORDER BY mu.source_priority ASC, mu.source_id DESC
-            ) AS dedup_rank
-          FROM messages_union mu
-          WHERE mu.chat_id = %s
-            AND (
-              mu.msg_tipo IS NOT NULL
-              OR mu.msg_conteudo IS NOT NULL
-            )
-        )
+    query = """
         SELECT
-          r.id,
-          r.chat_id,
-          r.evento_timestamp,
-          r.msg_conteudo,
-          r.msg_tipo,
-          r.msg_from_client,
-          r.msg_status_envio,
-          r.sent_by_name
-        FROM ranked r
-        WHERE r.dedup_rank = 1
-        ORDER BY r.evento_timestamp ASC NULLS LAST, r.id ASC
+          (sm.chat_id::text || '|' || sm.message_id) AS id,
+          sm.chat_id::text AS chat_id,
+          COALESCE(sm.event_time, sm.sent_at) AS evento_timestamp,
+          NULLIF(BTRIM(COALESCE(sm.content_original_text, sm.content_text, '')), '') AS msg_conteudo,
+          NULLIF(BTRIM(COALESCE(sm.message_type, '')), '') AS msg_tipo,
+          CASE WHEN sm.from_me IS TRUE THEN FALSE
+               WHEN sm.from_me IS FALSE THEN TRUE
+               ELSE NULL
+          END AS msg_from_client,
+          CASE WHEN sm.message_status IS TRUE THEN NULL
+               WHEN sm.message_status IS FALSE THEN COALESCE(NULLIF(BTRIM(sm.fail_reason), ''), 'false')
+               ELSE NULL
+          END AS msg_status_envio,
+          NULLIF(BTRIM(COALESCE(sm.sent_by_name, '')), '') AS sent_by_name
+        FROM smclick_message sm
+        WHERE sm.chat_id::text = %s
+          AND (sm.message_type IS NOT NULL OR sm.content_text IS NOT NULL)
+        ORDER BY COALESCE(sm.event_time, sm.sent_at) ASC NULLS LAST, sm.message_id ASC
         LIMIT %s OFFSET %s;
     """
     try:
@@ -470,59 +351,18 @@ def dashboard_stage_stratification_api(request):
         where_sql = "WHERE " + " AND ".join(where_clauses)
 
     query = f"""
-        WITH conv_sources AS (
+        WITH conv AS (
           SELECT
-            0 AS source_priority,
             sc.chat_id::text AS chat_id,
-            to_jsonb(sc) AS j
-          FROM vw_smclick_conversations_latest sc
+            sc.contact_name AS cliente_nome,
+            sc.contact_phone AS cliente_telefone,
+            sc.attendant_name AS vendedor_nome,
+            COALESCE(sc.current_stage, sc.status) AS stage_raw,
+            sc.status AS status_raw,
+            sc.chat_updated_at AS updated_ts,
+            sc.chat_created_at AS created_ts
+          FROM smclick_chat sc
           WHERE sc.chat_id IS NOT NULL
-
-          UNION ALL
-
-          SELECT
-            1 AS source_priority,
-            sc.chat_id::text AS chat_id,
-            to_jsonb(sc) AS j
-          FROM semclick_conversations sc
-          WHERE sc.chat_id IS NOT NULL
-
-          UNION ALL
-
-          SELECT
-            2 AS source_priority,
-            c.chat_id::text AS chat_id,
-            to_jsonb(c) AS j
-          FROM conversations c
-          WHERE c.chat_id IS NOT NULL
-        ),
-        conv AS (
-          SELECT DISTINCT ON (src.chat_id)
-            src.chat_id,
-            NULLIF(BTRIM(COALESCE(src.j->>'cliente_nome', src.j->>'customer_name', src.j->>'contact_name', src.j#>>'{{contact,name}}', src.j#>>'{{infos,chat,contact,name}}', '')), '') AS cliente_nome,
-            NULLIF(BTRIM(COALESCE(src.j->>'cliente_telefone', src.j->>'customer_phone', src.j->>'contact_phone', src.j#>>'{{contact,telephone}}', src.j#>>'{{infos,chat,contact,telephone}}', '')), '') AS cliente_telefone,
-            NULLIF(BTRIM(COALESCE(src.j->>'vendedor_nome', src.j->>'attendant_name', src.j->>'current_attendant_name', src.j#>>'{{infos,message,sent_by,name}}', '')), '') AS vendedor_nome,
-            NULLIF(BTRIM(COALESCE(src.j->>'etapa_funil_atual', src.j->>'etapa_funil', src.j->>'funnel_stage', src.j->>'current_funnel_stage', src.j->>'coluna_kanban', src.j->>'kanban_column', src.j#>>'{{infos,chat,crm_column,name}}', '')), '') AS stage_raw,
-            NULLIF(BTRIM(COALESCE(src.j->>'status', src.j->>'status_conversa', '')), '') AS status_raw,
-            CASE
-              WHEN NULLIF(BTRIM(COALESCE(src.j->>'updated_at', src.j->>'ultima_atualizacao', src.j->>'evento_timestamp', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,updated_at}}', '')), '') ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}'
-                THEN NULLIF(BTRIM(COALESCE(src.j->>'updated_at', src.j->>'ultima_atualizacao', src.j->>'evento_timestamp', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,updated_at}}', '')), '')::timestamptz
-              ELSE NULL
-            END AS updated_ts,
-            CASE
-              WHEN NULLIF(BTRIM(COALESCE(src.j->>'data_criacao_chat', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,created_at}}', '')), '') ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}'
-                THEN NULLIF(BTRIM(COALESCE(src.j->>'data_criacao_chat', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,created_at}}', '')), '')::timestamptz
-              ELSE NULL
-            END AS created_ts
-          FROM conv_sources src
-          ORDER BY
-            src.chat_id,
-            CASE
-              WHEN NULLIF(BTRIM(COALESCE(src.j->>'updated_at', src.j->>'ultima_atualizacao', src.j->>'evento_timestamp', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,updated_at}}', '')), '') ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}'
-                THEN NULLIF(BTRIM(COALESCE(src.j->>'updated_at', src.j->>'ultima_atualizacao', src.j->>'evento_timestamp', src.j->>'start_time', src.j->>'created_at', src.j#>>'{{infos,chat,updated_at}}', '')), '')::timestamptz
-              ELSE NULL
-            END DESC NULLS LAST,
-            src.source_priority ASC
         ),
         filtered AS (
           SELECT *
@@ -736,66 +576,35 @@ def dashboard_api(request):
     where_sql = "WHERE " + " AND ".join(where_clauses)
     where_sql_no_vendor = "WHERE " + " AND ".join(where_clauses_no_vendor)
     # Unified base: smclick_chat (source 0) + conversations (source 1), mapped to conversations schema
-    unified_base_sql = """
-      SELECT DISTINCT ON (chat_id)
-        chat_id, contact_name, attendant_name, department_name,
-        current_funnel_stage, start_time, end_time, created_at, updated_at,
-        budget_value, contact_reason, instance_id, ai_agent_rating
-      FROM (
-        SELECT
-          sc.chat_id::text AS chat_id,
-          sc.contact_name,
-          sc.attendant_name,
-          sc.department_name,
-          sc.status AS current_funnel_stage,
-          sc.chat_created_at AS start_time,
-          CASE WHEN sc.status IN ('finished', 'closed') THEN sc.chat_updated_at ELSE NULL END AS end_time,
-          sc.inserted_at AS created_at,
-          sc.refreshed_at AS updated_at,
-          sc.budget_value,
-          NULL::text AS contact_reason,
-          NULL::text AS instance_id,
-          NULL::text AS ai_agent_rating,
-          0 AS _src
-        FROM smclick_chat sc
-        WHERE sc.chat_id IS NOT NULL
-        UNION ALL
-        SELECT
-          c.chat_id, c.contact_name, c.attendant_name,
-          NULLIF(BTRIM(COALESCE(
-            to_jsonb(c)->>'department_name',
-            to_jsonb(c)->>'department',
-            ''
-          )), '') AS department_name,
-          c.current_funnel_stage, c.start_time, c.end_time,
-          c.created_at, c.updated_at, c.budget_value, c.contact_reason,
-          c.instance_id::text AS instance_id,
-          c.ai_agent_rating::text AS ai_agent_rating,
-          1 AS _src
-        FROM conversations c
-        WHERE c.chat_id IS NOT NULL
-      ) u
-      ORDER BY chat_id, _src ASC, COALESCE(start_time, created_at) DESC NULLS LAST
+    base_sql = """
+      SELECT
+        sc.chat_id::text AS chat_id,
+        sc.contact_name,
+        sc.attendant_name,
+        sc.department_name,
+        sc.status AS current_funnel_stage,
+        sc.chat_created_at AS start_time,
+        CASE WHEN sc.status IN ('finished', 'closed') THEN sc.chat_updated_at ELSE NULL END AS end_time,
+        sc.inserted_at AS created_at,
+        sc.refreshed_at AS updated_at,
+        sc.budget_value,
+        sc.contact_phone,
+        sc.current_stage,
+        sc.product,
+        sc.order_value,
+        sc.loss_reason
+      FROM smclick_chat sc
+      WHERE sc.chat_id IS NOT NULL
     """
     filtered_base_sql = f"""
-      SELECT DISTINCT ON (c.chat_id)
-        c.*
-      FROM ({unified_base_sql}) c
+      SELECT c.*
+      FROM ({base_sql}) c
       {where_sql}
-      ORDER BY
-        c.chat_id,
-        COALESCE(c.start_time, c.created_at, c.end_time) DESC NULLS LAST,
-        c.created_at DESC NULLS LAST
     """
     filtered_base_sql_no_vendor = f"""
-      SELECT DISTINCT ON (c.chat_id)
-        c.*
-      FROM ({unified_base_sql}) c
+      SELECT c.*
+      FROM ({base_sql}) c
       {where_sql_no_vendor}
-      ORDER BY
-        c.chat_id,
-        COALESCE(c.start_time, c.created_at, c.end_time) DESC NULLS LAST,
-        c.created_at DESC NULLS LAST
     """
     messages_union_sql = _messages_union_sql()
     owners_id_col = _owners_view_id_column()
@@ -1910,54 +1719,32 @@ def dead_conversations_api(request):
 
     where_sql = "WHERE " + " AND ".join(where_clauses)
 
-    unified_base_sql = """
-      SELECT DISTINCT ON (chat_id)
-        chat_id, contact_name, attendant_name,
-        current_funnel_stage, start_time, end_time, created_at, updated_at
-      FROM (
-        SELECT
-          sc.chat_id::text AS chat_id,
-          sc.contact_name,
-          sc.attendant_name,
-          sc.status AS current_funnel_stage,
-          sc.chat_created_at AS start_time,
-          CASE WHEN sc.status IN ('finished', 'closed') THEN sc.chat_updated_at ELSE NULL END AS end_time,
-          sc.inserted_at AS created_at,
-          sc.refreshed_at AS updated_at,
-          0 AS _src
-        FROM smclick_chat sc
-        WHERE sc.chat_id IS NOT NULL
-        UNION ALL
-        SELECT
-          c.chat_id, c.contact_name, c.attendant_name,
-          c.current_funnel_stage, c.start_time, c.end_time,
-          c.created_at, c.updated_at,
-          1 AS _src
-        FROM conversations c
-        WHERE c.chat_id IS NOT NULL
-      ) u
-      ORDER BY chat_id, _src ASC, COALESCE(start_time, created_at) DESC NULLS LAST
+    base_sql = """
+      SELECT
+        sc.chat_id::text AS chat_id,
+        sc.contact_name,
+        sc.attendant_name,
+        sc.status AS current_funnel_stage,
+        sc.chat_created_at AS start_time,
+        CASE WHEN sc.status IN ('finished', 'closed') THEN sc.chat_updated_at ELSE NULL END AS end_time,
+        sc.inserted_at AS created_at,
+        sc.refreshed_at AS updated_at
+      FROM smclick_chat sc
+      WHERE sc.chat_id IS NOT NULL
     """
 
     query = f"""
         WITH filtered AS (
-          SELECT DISTINCT ON (c.chat_id) c.*
-          FROM ({unified_base_sql}) c
+          SELECT c.*
+          FROM ({base_sql}) c
           {where_sql}
-          ORDER BY c.chat_id, COALESCE(c.start_time, c.created_at) DESC NULLS LAST
         ),
         message_stats AS (
-          SELECT chat_id,
-                 SUM(CASE WHEN outbound THEN 1 ELSE 0 END) AS outbound_count
-          FROM (
-            SELECT m.chat_id, (m.from_client = false) AS outbound
-            FROM messages m JOIN filtered f ON f.chat_id = m.chat_id
-            UNION ALL
-            SELECT sm.chat_id::text,
-                   (sm.from_me = true AND sm.sent_by_name IS NOT NULL) AS outbound
-            FROM smclick_message sm JOIN filtered f ON f.chat_id = sm.chat_id::text
-          ) _ms
-          GROUP BY chat_id
+          SELECT sm.chat_id::text AS chat_id,
+                 SUM(CASE WHEN sm.from_me = true AND sm.sent_by_name IS NOT NULL THEN 1 ELSE 0 END) AS outbound_count
+          FROM smclick_message sm
+          JOIN filtered f ON f.chat_id = sm.chat_id::text
+          GROUP BY sm.chat_id
         )
         SELECT
           f.chat_id,
@@ -2008,27 +1795,15 @@ def alerts_api(request):
 
     where_sql = "WHERE " + " AND ".join(where_clauses)
 
-    unified_base_sql = """
-      SELECT DISTINCT ON (chat_id)
-        chat_id, contact_name, contact_phone, attendant_name,
-        current_funnel_stage, start_time, end_time, created_at, updated_at, budget_value
-      FROM (
-        SELECT
-          sc.chat_id::text AS chat_id, sc.contact_name, sc.contact_phone, sc.attendant_name,
-          sc.status AS current_funnel_stage,
-          sc.chat_created_at AS start_time,
-          CASE WHEN sc.status IN ('finished', 'closed') THEN sc.chat_updated_at ELSE NULL END AS end_time,
-          sc.inserted_at AS created_at, sc.refreshed_at AS updated_at,
-          sc.budget_value, 0 AS _src
-        FROM smclick_chat sc WHERE sc.chat_id IS NOT NULL
-        UNION ALL
-        SELECT
-          c.chat_id, c.contact_name, c.contact_phone, c.attendant_name,
-          c.current_funnel_stage, c.start_time, c.end_time,
-          c.created_at, c.updated_at, c.budget_value, 1 AS _src
-        FROM conversations c WHERE c.chat_id IS NOT NULL
-      ) u
-      ORDER BY chat_id, _src ASC, COALESCE(start_time, created_at) DESC NULLS LAST
+    base_sql = """
+      SELECT
+        sc.chat_id::text AS chat_id, sc.contact_name, sc.contact_phone, sc.attendant_name,
+        sc.status AS current_funnel_stage,
+        sc.chat_created_at AS start_time,
+        CASE WHEN sc.status IN ('finished', 'closed') THEN sc.chat_updated_at ELSE NULL END AS end_time,
+        sc.inserted_at AS created_at, sc.refreshed_at AS updated_at,
+        sc.budget_value
+      FROM smclick_chat sc WHERE sc.chat_id IS NOT NULL
     """
 
     closed_stages = "('finished','closed','Finalizado','finalizado','Lixo','lixo')"
@@ -2040,10 +1815,9 @@ def alerts_api(request):
 
     query = f"""
       WITH filtered AS (
-        SELECT DISTINCT ON (c.chat_id) c.*
-        FROM ({unified_base_sql}) c
+        SELECT c.*
+        FROM ({base_sql}) c
         {where_sql}
-        ORDER BY c.chat_id, COALESCE(c.start_time, c.created_at) DESC NULLS LAST
       ),
       -- Handoff: first human vendor message per chat (sent_by_name populated OR *Name* pattern)
       handoff_ts AS (
