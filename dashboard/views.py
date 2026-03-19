@@ -602,7 +602,6 @@ def dashboard_api(request):
       FROM ({base_sql}) c
       {where_sql_no_vendor}
     """
-    messages_union_sql = _messages_union_sql()
     owners_id_col = _owners_view_id_column()
     owners_cte_sql = ""
     owners_join_sql = ""
@@ -637,13 +636,10 @@ def dashboard_api(request):
     filtered_base_sql_no_vendor = "SELECT * FROM _tmp_filtered_nv"
     # Bot events CTE: try pre-computed bot_transfers table, fallback to ILIKE scan
     _has_bot_transfers = False
-    _has_budget_detected = False
     try:
         with connection.cursor() as _ck:
             _ck.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'bot_transfers' LIMIT 1")
             _has_bot_transfers = bool(_ck.fetchone())
-            _ck.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'chat_budget_detected' LIMIT 1")
-            _has_budget_detected = bool(_ck.fetchone())
     except Exception:
         pass
 
@@ -671,51 +667,6 @@ def dashboard_api(request):
                     OR sm.content_text ILIKE '%%encaminhar ao nosso time de vendas%%'
                   )
                 GROUP BY sm.chat_id
-            )
-        """
-
-    if _has_budget_detected:
-        _budget_values_cte = """
-            budget_values AS (
-                SELECT
-                    cbd.chat_id AS chat_id_txt,
-                    cbd.budget_value AS max_budget_msg
-                FROM chat_budget_detected cbd
-                JOIN filtered f ON f.chat_id = cbd.chat_id
-                WHERE cbd.budget_value > 0
-                    AND cbd.budget_value <= 10000000
-            )
-        """
-    else:
-        _budget_values_cte = """
-            budget_values AS (
-                SELECT
-                    src.chat_id_txt,
-                    MAX(src.msg_budget) AS max_budget_msg
-                FROM (
-                    SELECT
-                        sm.chat_id::text AS chat_id_txt,
-                        NULLIF(
-                            REPLACE(REPLACE((matches)[1], '.', ''), ',', '.'),
-                            ''
-                        )::numeric AS msg_budget
-                    FROM smclick_message sm
-                    JOIN filtered f ON f.chat_id = sm.chat_id::text
-                    CROSS JOIN LATERAL regexp_matches(
-                        translate(
-                            lower(COALESCE(sm.content_text, '')),
-                            'áàâãäéèêëíìîïóòôõöúùûüç',
-                            'aaaaaeeeeiiiiooooouuuuc'
-                        ),
-                        'total\\\\s*[:\\\\-]?\\\\s*r\\\\$\\\\s*([0-9\\\\.]+(?:,[0-9]{2})?)',
-                        'g'
-                    ) AS matches
-                    WHERE sm.content_text IS NOT NULL
-                ) src
-                WHERE src.msg_budget IS NOT NULL
-                    AND src.msg_budget > 0
-                    AND src.msg_budget <= 10000000
-                GROUP BY src.chat_id_txt
             )
         """
 
@@ -1166,7 +1117,6 @@ def dashboard_api(request):
             """
 
             support_reason_pattern = "(pos[- ]?venda|duvidas?|sac|rastreio)"
-            budget_outlier_ceiling = 10000000
             sdr_attendant_exclude_sql = """
               (
                 translate(
@@ -1207,12 +1157,11 @@ def dashboard_api(request):
                         WHERE f.current_funnel_stage NOT IN ('finished', 'closed')
                       ) AS contacts_received,
                       COUNT(*) FILTER (
-                        WHERE COALESCE(f.budget_value, 0) > 0
-                          AND NOT (f.reason_norm ~ '{support_reason_pattern}')
+                        WHERE LOWER(COALESCE(f.current_stage, '')) = 'proposta enviada'
                       ) AS budgets_count,
                       COUNT(*) FILTER (
-                        WHERE COALESCE(f.budget_value, 0) > 0
-                          AND NOT (f.reason_norm ~ '{support_reason_pattern}')
+                        WHERE LOWER(COALESCE(f.current_stage, '')) = 'proposta enviada'
+                          OR COALESCE(f.budget_value, 0) > 0
                       ) AS budgets_detected_count,
                       0::float AS budgets_sum,
                       0::float AS budgets_sum_detected,
@@ -1241,18 +1190,6 @@ def dashboard_api(request):
                     ) AS reason_norm
                   FROM filtered_base fb
                 ),
-                messages_union AS (
-                  {messages_union_sql}
-                ),
-                structured_budget_values AS (
-                  SELECT
-                    f.chat_id,
-                    f.budget_value
-                  FROM filtered f
-                  WHERE f.budget_value IS NOT NULL
-                    AND f.budget_value > 0
-                    AND f.budget_value <= {budget_outlier_ceiling}
-                ),
                 {_bot_events_cte},
                 message_stats AS (
                   SELECT sm.chat_id::text AS chat_id,
@@ -1271,7 +1208,6 @@ def dashboard_api(request):
                     AND f.end_time IS NOT NULL
                     AND f.current_funnel_stage IN ('finished', 'closed')
                 ),
-                {_budget_values_cte},
                 business_duration AS (
                   SELECT
                     ct.chat_id,
@@ -1423,38 +1359,18 @@ def dashboard_api(request):
                     WHERE f.current_funnel_stage NOT IN ('finished', 'closed')
                   ) AS contacts_received,
                   COUNT(*) FILTER (
-                    WHERE COALESCE(sbv.budget_value, 0) > 0
-                      AND NOT (f.reason_norm ~ '{support_reason_pattern}')
+                    WHERE LOWER(COALESCE(f.current_stage, '')) = 'proposta enviada'
                   ) AS budgets_count,
                   COUNT(*) FILTER (
-                    WHERE (
-                        COALESCE(sbv.budget_value, 0) > 0
-                        OR (
-                          COALESCE(sbv.budget_value, 0) = 0
-                          AND bv.max_budget_msg IS NOT NULL
-                        )
-                      )
-                      AND NOT (f.reason_norm ~ '{support_reason_pattern}')
+                    WHERE LOWER(COALESCE(f.current_stage, '')) = 'proposta enviada'
+                      OR COALESCE(f.budget_value, 0) > 0
                   ) AS budgets_detected_count,
                   COALESCE(
-                    SUM(
-                      CASE
-                        WHEN COALESCE(sbv.budget_value, 0) > 0
-                          AND NOT (f.reason_norm ~ '{support_reason_pattern}')
-                        THEN sbv.budget_value
-                        ELSE 0
-                      END
-                    ),
+                    SUM(CASE WHEN COALESCE(f.budget_value, 0) > 0 THEN f.budget_value ELSE 0 END),
                     0
                   ) AS budgets_sum,
                   COALESCE(
-                    SUM(
-                      CASE
-                        WHEN f.reason_norm ~ '{support_reason_pattern}' THEN 0
-                        WHEN COALESCE(sbv.budget_value, 0) > 0 THEN sbv.budget_value
-                        ELSE COALESCE(bv.max_budget_msg, 0)
-                      END
-                    ),
+                    SUM(CASE WHEN COALESCE(f.budget_value, 0) > 0 THEN f.budget_value ELSE 0 END),
                     0
                   ) AS budgets_sum_detected,
                   COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS dead_contacts,
@@ -1463,8 +1379,6 @@ def dashboard_api(request):
                   0::numeric AS avg_score
                 FROM filtered f
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
-                LEFT JOIN structured_budget_values sbv ON sbv.chat_id = f.chat_id
-                LEFT JOIN budget_values bv ON bv.chat_id_txt = f.chat_id::text
                 LEFT JOIN business_duration bd ON bd.chat_id = f.chat_id
                 LEFT JOIN business_handoff bh ON bh.chat_id = f.chat_id
                 LEFT JOIN direct_metrics dm ON dm.chat_id = f.chat_id

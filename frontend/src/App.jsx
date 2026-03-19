@@ -1930,12 +1930,7 @@ function AppContent({ onLogout }) {
                                 <div className="pipeline-step">
                                   <p className="pipeline-step-label">Somatória orçada</p>
                                   <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsSum)}</p>
-                                  <div className="pipeline-step-foot"><span className="pipeline-step-note">Registrado no CRM</span></div>
-                                </div>
-                                <div className="pipeline-step">
-                                  <p className="pipeline-step-label">Somatória (mensagens)</p>
-                                  <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsSumDetected)}</p>
-                                  <div className="pipeline-step-foot"><span className="pipeline-step-note">Não registrado no CRM</span></div>
+                                  <div className="pipeline-step-foot"><span className="pipeline-step-note">Valor total orçado</span></div>
                                 </div>
                               </div>
                             </div>
