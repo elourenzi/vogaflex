@@ -452,6 +452,7 @@ function AppContent({ onLogout }) {
   const [stageTimelineLoading, setStageTimelineLoading] = useState(false);
   const [stageTimelineData, setStageTimelineData] = useState(null);
   const [selectedStageKey, setSelectedStageKey] = useState("aguardando");
+  const [stageListModal, setStageListModal] = useState(false);
   const [stageClientModal, setStageClientModal] = useState(null);
   const [stageClientMessages, setStageClientMessages] = useState([]);
   const [stageClientMessagesLoading, setStageClientMessagesLoading] = useState(false);
@@ -461,6 +462,19 @@ function AppContent({ onLogout }) {
   const [alertsData, setAlertsData] = useState(null);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [alertModalKey, setAlertModalKey] = useState(null);
+
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === "Escape") {
+        if (stageClientModal) setStageClientModal(null);
+        else if (stageListModal) setStageListModal(false);
+        else if (alertModalKey) setAlertModalKey(null);
+        else if (deadContactsOpen) setDeadContactsOpen(false);
+      }
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, [stageClientModal, stageListModal, alertModalKey, deadContactsOpen]);
   const [selectedVendorFullData, setSelectedVendorFullData] = useState(null);
 
   const loadConversations = async () => {
@@ -2104,7 +2118,7 @@ function AppContent({ onLogout }) {
                                         className={`stage-timeline-item${
                                           isActive ? " is-active" : ""
                                         }`}
-                                        onClick={() => setSelectedStageKey(stage.key)}
+                                        onClick={() => { setSelectedStageKey(stage.key); setStageListModal(true); }}
                                       >
                                         <span className="stage-timeline-count">
                                           {formatCount(stage.total)}
@@ -2122,52 +2136,6 @@ function AppContent({ onLogout }) {
                                     );
                                   })}
                                 </div>
-                                <div className="stage-clients-card">
-                                  <div className="stage-clients-head">
-                                    <h4>
-                                      {selectedTimelineStage?.label || "Etapa"} ·{" "}
-                                      {formatCount(selectedTimelineStage?.total || 0)}
-                                    </h4>
-                                    <p className="muted">
-                                      Base classificada:{" "}
-                                      {formatCount(stageTimelineTotalClassified)}
-                                    </p>
-                                  </div>
-                                  {stageTimelineLoading ? (
-                                    <p className="empty">Carregando estratificação...</p>
-                                  ) : selectedStageClientsGrouped.length > 0 ? (
-                                    <div className="stage-clients-list">
-                                      {selectedStageClientsGrouped.map((group) => (
-                                        <div
-                                          className="stage-vendor-group"
-                                          key={`${selectedTimelineStage?.key}-${group.vendedor}`}
-                                        >
-                                          <div className="stage-vendor-group-head">
-                                            <strong>{group.vendedor}</strong>
-                                            <span>{formatCount(group.clients.length)}</span>
-                                          </div>
-                                          <div className="stage-vendor-group-list">
-                                            {group.clients.map((client) => (
-                                              <button
-                                                key={`${selectedTimelineStage.key}-${client.chat_id}`}
-                                                type="button"
-                                                className="stage-client-item"
-                                                onClick={() => setStageClientModal(client)}
-                                              >
-                                                <strong>
-                                                  {client.cliente_nome || client.chat_id}
-                                                </strong>
-                                                <span>{client.cliente_telefone || "--"}</span>
-                                              </button>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <p className="empty">Nenhum cliente nesta etapa.</p>
-                                  )}
-                                </div>
                               </div>
                             </>
                           )}
@@ -2182,6 +2150,69 @@ function AppContent({ onLogout }) {
             </div>
           </div>
         </section>
+      )}
+      {stageListModal && selectedTimelineStage && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setStageListModal(false)}
+        >
+          <div className="modal-card modal-card--stage-list" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <p className="stat-label">
+                  {selectedTimelineStage.label} · {formatCount(selectedTimelineStage.total)}
+                </p>
+                <p className="stat-foot">
+                  Base classificada: {formatCount(stageTimelineTotalClassified)}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setStageListModal(false)}
+                aria-label="Fechar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              {stageTimelineLoading ? (
+                <p className="empty">Carregando estratificação...</p>
+              ) : selectedStageClientsGrouped.length > 0 ? (
+                <div className="stage-clients-list">
+                  {selectedStageClientsGrouped.map((group) => (
+                    <div
+                      className="stage-vendor-group"
+                      key={`modal-${selectedTimelineStage.key}-${group.vendedor}`}
+                    >
+                      <div className="stage-vendor-group-head">
+                        <strong>{group.vendedor}</strong>
+                        <span>{formatCount(group.clients.length)}</span>
+                      </div>
+                      <div className="stage-vendor-group-list">
+                        {group.clients.map((client) => (
+                          <button
+                            key={`modal-${selectedTimelineStage.key}-${client.chat_id}`}
+                            type="button"
+                            className="stage-client-item"
+                            onClick={() => { setStageListModal(false); setStageClientModal(client); }}
+                          >
+                            <strong>{client.cliente_nome || client.chat_id}</strong>
+                            <span>{client.cliente_telefone || "--"}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty">Nenhum cliente nesta etapa.</p>
+              )}
+            </div>
+          </div>
+        </div>
       )}
       {stageClientModal && (
         <div

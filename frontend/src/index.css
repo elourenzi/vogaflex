@@ -445,6 +445,14 @@ button.funnel-step {
   place-items: center;
 }
 
+.modal-card--stage-list {
+  width: min(560px, 100%);
+}
+.modal-card--stage-list .modal-body {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
 .modal-close:hover {
   border-color: rgba(200, 38, 80, 0.4);
   color: var(--accent);
