@@ -385,11 +385,11 @@ def dashboard_stage_stratification_api(request):
               WHEN stage_norm IN ('em atendimento', 'andamento') THEN 'em_atendimento'
               WHEN stage_norm IN ('cadastro') THEN 'cadastro'
               WHEN stage_norm IN ('contato feito', '1a chamada') THEN 'chamada_1'
-              WHEN lower(BTRIM(COALESCE(f.stage_raw, ''))) LIKE '1%chamada' THEN 'chamada_1'
+              WHEN lower(BTRIM(COALESCE(f.stage_raw, ''))) LIKE '1%%chamada' THEN 'chamada_1'
               WHEN stage_norm IN ('contato feito 2', '2a chamada') THEN 'chamada_2'
-              WHEN lower(BTRIM(COALESCE(f.stage_raw, ''))) LIKE '2%chamada' THEN 'chamada_2'
+              WHEN lower(BTRIM(COALESCE(f.stage_raw, ''))) LIKE '2%%chamada' THEN 'chamada_2'
               WHEN stage_norm IN ('3a chamada') THEN 'chamada_3'
-              WHEN lower(BTRIM(COALESCE(f.stage_raw, ''))) LIKE '3%chamada' THEN 'chamada_3'
+              WHEN lower(BTRIM(COALESCE(f.stage_raw, ''))) LIKE '3%%chamada' THEN 'chamada_3'
               WHEN stage_norm IN ('proposta enviada') THEN 'proposta_enviada'
               WHEN stage_norm IN ('pos-vendas', 'pos vendas', 'posvendas', 'pos-venda', 'pos venda', 'recompra',
                                   'aguardando entrega', 'aguardando coleta') THEN 'pos_vendas'
@@ -412,11 +412,11 @@ def dashboard_stage_stratification_api(request):
               WHEN stage_norm IN ('atualizados', 'atualizacao', 'tarefas') THEN 4
               WHEN stage_norm IN ('cadastro') THEN 5
               WHEN stage_norm IN ('contato feito', '1a chamada') THEN 6
-              WHEN lower(BTRIM(COALESCE(f.stage_raw, ''))) LIKE '1%chamada' THEN 6
+              WHEN lower(BTRIM(COALESCE(f.stage_raw, ''))) LIKE '1%%chamada' THEN 6
               WHEN stage_norm IN ('contato feito 2', '2a chamada') THEN 7
-              WHEN lower(BTRIM(COALESCE(f.stage_raw, ''))) LIKE '2%chamada' THEN 7
+              WHEN lower(BTRIM(COALESCE(f.stage_raw, ''))) LIKE '2%%chamada' THEN 7
               WHEN stage_norm IN ('3a chamada') THEN 8
-              WHEN lower(BTRIM(COALESCE(f.stage_raw, ''))) LIKE '3%chamada' THEN 8
+              WHEN lower(BTRIM(COALESCE(f.stage_raw, ''))) LIKE '3%%chamada' THEN 8
               WHEN stage_norm IN ('proposta enviada') THEN 9
               WHEN stage_norm IN ('pos-vendas', 'pos vendas', 'posvendas', 'pos-venda', 'pos venda', 'recompra',
                                   'aguardando entrega', 'aguardando coleta') THEN 10
