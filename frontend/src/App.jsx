@@ -1875,76 +1875,90 @@ function AppContent({ onLogout }) {
                           const semFollowup  = alertsData?.orcamento_sem_followup?.length ?? null;
                           const pctVendedor = recebidos ? Math.round((comVendedor / recebidos) * 100) : 0;
                           const pctBot = recebidos ? 100 - pctVendedor : 0;
-                          const steps = [
-                            { label: "Parado há +2 dias",      value: parados,      perda: parados != null ? formatPercent(parados, recebidos) : null, note: "Do total", loss: true, onClick: () => parados && setAlertModalKey("sem_retorno_2d") },
-                            { label: "Propostas enviadas",     value: propostas,    perda: formatPercent(recebidos - propostas, recebidos), note: "Sem proposta" },
-                            { label: "Checkouts enviados",     value: checkouts,    perda: formatPercent(checkouts, propostas), note: "Das propostas" },
-                            { label: "Compras realizadas",     value: compras,      perda: formatPercent(compras, checkouts), note: "Dos checkouts" },
-                            { label: "Proposta sem follow-up", value: semFollowup,  perda: semFollowup != null ? formatPercent(semFollowup, propostas) : null, note: "Das propostas", loss: true, onClick: () => semFollowup && setAlertModalKey("orcamento_sem_followup") },
-                            { label: "Morreram",               value: morreram,     perda: formatPercent(morreram, recebidos), note: "Do total", loss: true, onClick: openDeadContacts },
+                          const journeySteps = [
+                            { label: "Contatos c/ interação", value: comVendedor,  perda: formatPercent(recebidos - comVendedor, recebidos), note: "Do total" },
+                            { label: "Propostas enviadas",    value: propostas,    perda: formatPercent(propostas, comVendedor), note: "Dos c/ interação" },
+                            { label: "Checkouts enviados",    value: checkouts,    perda: formatPercent(checkouts, propostas), note: "Das propostas" },
+                            { label: "Compras realizadas",    value: compras,      perda: formatPercent(compras, checkouts), note: "Dos checkouts" },
                           ];
+                          const alertSteps = [
+                            { label: "Parado há +2 dias",      value: parados,     perda: parados != null ? formatPercent(parados, recebidos) : null, note: "Do total", loss: true, onClick: () => parados && setAlertModalKey("sem_retorno_2d") },
+                            { label: "Proposta sem follow-up", value: semFollowup, perda: semFollowup != null ? formatPercent(semFollowup, propostas) : null, note: "Das propostas", loss: true, onClick: () => semFollowup && setAlertModalKey("orcamento_sem_followup") },
+                            { label: "Morreram",               value: morreram,    perda: formatPercent(morreram, recebidos), note: "Do total", loss: true, onClick: openDeadContacts },
+                          ];
+                          const renderStep = (s) => {
+                            const Tag = s.onClick ? "button" : "div";
+                            return (
+                              <Tag key={s.label} type={s.onClick ? "button" : undefined}
+                                className={"pipeline-step" + (s.loss ? " is-loss" : "") + (s.onClick ? " is-clickable" : "")}
+                                onClick={s.onClick || undefined}
+                              >
+                                <p className="pipeline-step-label">{s.label}</p>
+                                <p className="pipeline-step-value">{s.value == null ? (alertsLoading ? "..." : "—") : formatCount(s.value)}</p>
+                                <div className="pipeline-step-foot">
+                                  {s.perda && <span className="pipeline-step-perda">{s.perda}</span>}
+                                  <span className="pipeline-step-note">{s.note}</span>
+                                </div>
+                              </Tag>
+                            );
+                          };
                           return (
-                            <div className="pipeline-funnel">
-                              {/* Card especial: Contatos Recebidos com barra bot/vendedor */}
-                              <div className="pipeline-step pipeline-step--contatos" style={{gridColumn: "1 / span 2"}}>
-                                <p className="pipeline-step-label">Contatos recebidos</p>
-                                <p className="pipeline-step-value">{formatCount(recebidos)}</p>
-                                <div className="contatos-bar-wrapper">
-                                  <div className="contatos-bar">
-                                    <div className="contatos-bar-segment contatos-bar--vendedor" style={{width: `${pctVendedor}%`}} />
-                                    <div className="contatos-bar-segment contatos-bar--bot" style={{width: `${pctBot}%`}} />
-                                  </div>
-                                  <div className="contatos-bar-legend">
-                                    <span className="contatos-legend-item">
-                                      <span className="contatos-legend-dot contatos-legend-dot--vendedor" />
-                                      Com vendedor: {formatCount(comVendedor)} ({pctVendedor}%)
-                                    </span>
-                                    <span className="contatos-legend-item">
-                                      <span className="contatos-legend-dot contatos-legend-dot--bot" />
-                                      Somente bot: {formatCount(comBot)} ({pctBot}%)
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                              {steps.map((s) => {
-                                const Tag = s.onClick ? "button" : "div";
-                                return (
-                                  <Tag key={s.label} type={s.onClick ? "button" : undefined}
-                                    className={"pipeline-step" + (s.loss ? " is-loss" : "") + (s.onClick ? " is-clickable" : "")}
-                                    onClick={s.onClick || undefined}
-                                  >
-                                    <p className="pipeline-step-label">{s.label}</p>
-                                    <p className="pipeline-step-value">{s.value == null ? (alertsLoading ? "..." : "—") : formatCount(s.value)}</p>
-                                    <div className="pipeline-step-foot">
-                                      {s.perda && <span className="pipeline-step-perda">{s.perda}</span>}
-                                      <span className="pipeline-step-note">{s.note}</span>
+                            <>
+                              <div className="pipeline-section pipeline-section--journey">
+                                <h4 className="pipeline-section-title">Jornada do cliente</h4>
+                                <div className="pipeline-funnel">
+                                  <div className="pipeline-step pipeline-step--contatos" style={{gridColumn: "1 / span 2"}}>
+                                    <p className="pipeline-step-label">Contatos recebidos</p>
+                                    <p className="pipeline-step-value">{formatCount(recebidos)}</p>
+                                    <div className="contatos-bar-wrapper">
+                                      <div className="contatos-bar">
+                                        <div className="contatos-bar-segment contatos-bar--vendedor" style={{width: `${pctVendedor}%`}} />
+                                        <div className="contatos-bar-segment contatos-bar--bot" style={{width: `${pctBot}%`}} />
+                                      </div>
+                                      <div className="contatos-bar-legend">
+                                        <span className="contatos-legend-item">
+                                          <span className="contatos-legend-dot contatos-legend-dot--vendedor" />
+                                          Com vendedor: {formatCount(comVendedor)} ({pctVendedor}%)
+                                        </span>
+                                        <span className="contatos-legend-item">
+                                          <span className="contatos-legend-dot contatos-legend-dot--bot" />
+                                          Somente bot: {formatCount(comBot)} ({pctBot}%)
+                                        </span>
+                                      </div>
                                     </div>
-                                  </Tag>
-                                );
-                              })}
-                              <div className="pipeline-secondary-row">
-                                <div className="pipeline-step">
-                                  <p className="pipeline-step-label">TMA</p>
-                                  <p className="pipeline-step-value">{formatDuration(dashboardStats?.avg_duration_seconds || 0)}</p>
-                                  <div className="pipeline-step-foot"><span className="pipeline-step-note">Tempo médio atendimento</span></div>
+                                  </div>
+                                  {journeySteps.map(renderStep)}
                                 </div>
-                                <div className="pipeline-step">
-                                  <p className="pipeline-step-label">TME</p>
-                                  <p className="pipeline-step-value">{formatDuration(dashboardStats?.avg_handoff_seconds || 0)}</p>
-                                  <div className="pipeline-step-foot"><span className="pipeline-step-note">SLA bot → vendedor</span></div>
-                                </div>
-                                <div className="pipeline-step">
-                                  <p className="pipeline-step-label">Somatória orçada</p>
-                                  <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsSum)}</p>
-                                  <div className="pipeline-step-foot"><span className="pipeline-step-note">Valor total orçado</span></div>
-                                </div>
-                                <div className="pipeline-step">
-                                  <p className="pipeline-step-label">Ticket médio</p>
-                                  <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsCount > 0 ? vendorTotals.budgetsSum / vendorTotals.budgetsCount : 0)}</p>
-                                  <div className="pipeline-step-foot"><span className="pipeline-step-note">Média por proposta</span></div>
+                                <div className="pipeline-secondary-row">
+                                  <div className="pipeline-step">
+                                    <p className="pipeline-step-label">TMA</p>
+                                    <p className="pipeline-step-value">{formatDuration(dashboardStats?.avg_duration_seconds || 0)}</p>
+                                    <div className="pipeline-step-foot"><span className="pipeline-step-note">Tempo médio atendimento</span></div>
+                                  </div>
+                                  <div className="pipeline-step">
+                                    <p className="pipeline-step-label">TME</p>
+                                    <p className="pipeline-step-value">{formatDuration(dashboardStats?.avg_handoff_seconds || 0)}</p>
+                                    <div className="pipeline-step-foot"><span className="pipeline-step-note">SLA bot → vendedor</span></div>
+                                  </div>
+                                  <div className="pipeline-step">
+                                    <p className="pipeline-step-label">Somatória orçada</p>
+                                    <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsSum)}</p>
+                                    <div className="pipeline-step-foot"><span className="pipeline-step-note">Valor total orçado</span></div>
+                                  </div>
+                                  <div className="pipeline-step">
+                                    <p className="pipeline-step-label">Ticket médio</p>
+                                    <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsCount > 0 ? vendorTotals.budgetsSum / vendorTotals.budgetsCount : 0)}</p>
+                                    <div className="pipeline-step-foot"><span className="pipeline-step-note">Média por proposta</span></div>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
+                              <div className="pipeline-section pipeline-section--alerts">
+                                <h4 className="pipeline-section-title">Alertas</h4>
+                                <div className="pipeline-funnel pipeline-funnel--alerts">
+                                  {alertSteps.map(renderStep)}
+                                </div>
+                              </div>
+                            </>
                           );
                         })()}
                       </div>
