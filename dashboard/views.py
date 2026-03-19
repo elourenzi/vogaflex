@@ -1484,6 +1484,7 @@ def dashboard_api(request):
                     "avg_duration_seconds": float(row[7]) if row[7] is not None else 0,
                     "avg_handoff_seconds": float(row[8]) if row[8] is not None else 0,
                     "avg_score": float(row[9]) if row[9] is not None else 0,
+                    "checkouts_count": row[10] if len(row) > 10 else 0,
                 }
                 for row in vendor_rows
             ]
