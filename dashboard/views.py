@@ -1951,30 +1951,74 @@ def smclick_debug(request):
     try:
         with connection.cursor() as cur:
             checks = {}
-            cur.execute("SELECT COUNT(*), MAX(ingested_at) FROM smclick_ingest_buffer")
-            r = cur.fetchone()
-            checks["ingest_buffer"] = {"count": r[0], "last_ingested": str(r[1]) if r[1] else None}
 
-            cur.execute("SELECT COUNT(*), MAX(received_at) FROM smclick_event_log")
-            r = cur.fetchone()
-            checks["event_log"] = {"count": r[0], "last_received": str(r[1]) if r[1] else None}
+            def _safe(sql, label):
+                try:
+                    cur.execute(sql)
+                    return cur.fetchone()
+                except Exception as e:
+                    checks[f"{label}_error"] = str(e)
+                    return None
 
-            cur.execute("SELECT COUNT(*) FROM smclick_event_log WHERE applied_at IS NULL")
-            checks["event_log_pending"] = cur.fetchone()[0]
+            # Buffer stats
+            r = _safe(
+                "SELECT COUNT(*), MAX(received_at), "
+                "COUNT(*) FILTER (WHERE processed_at IS NULL) "
+                "FROM smclick_ingest_buffer",
+                "ingest_buffer",
+            )
+            if r:
+                checks["ingest_buffer"] = {
+                    "total": r[0],
+                    "last_received": str(r[1]) if r[1] else None,
+                    "pending": r[2],
+                }
 
-            cur.execute("SELECT COUNT(*), MAX(refreshed_at), MAX(last_event_at) FROM smclick_chat")
-            r = cur.fetchone()
-            checks["smclick_chat"] = {"count": r[0], "last_refreshed": str(r[1]) if r[1] else None, "last_event": str(r[2]) if r[2] else None}
+            # Event log
+            r = _safe(
+                "SELECT COUNT(*), MAX(received_at), "
+                "COUNT(*) FILTER (WHERE applied_at IS NULL) "
+                "FROM smclick_event_log",
+                "event_log",
+            )
+            if r:
+                checks["event_log"] = {
+                    "total": r[0],
+                    "last_received": str(r[1]) if r[1] else None,
+                    "pending": r[2],
+                }
 
-            cur.execute("SELECT COUNT(*), MAX(event_time), MAX(last_seen_at) FROM smclick_message")
-            r = cur.fetchone()
-            checks["smclick_message"] = {"count": r[0], "last_event_time": str(r[1]) if r[1] else None, "last_seen": str(r[2]) if r[2] else None}
+            # Chats
+            r = _safe(
+                "SELECT COUNT(*), MAX(refreshed_at), MAX(last_event_at), "
+                "COUNT(*) FILTER (WHERE refreshed_at >= NOW() - INTERVAL '24 hours') "
+                "FROM smclick_chat",
+                "smclick_chat",
+            )
+            if r:
+                checks["smclick_chat"] = {
+                    "total": r[0],
+                    "last_refreshed": str(r[1]) if r[1] else None,
+                    "last_event": str(r[2]) if r[2] else None,
+                    "updated_24h": r[3],
+                }
 
-            cur.execute("SELECT COUNT(*) FROM smclick_chat WHERE refreshed_at >= NOW() - INTERVAL '24 hours'")
-            checks["chats_updated_24h"] = cur.fetchone()[0]
+            # Messages
+            r = _safe(
+                "SELECT COUNT(*), MAX(event_time), MAX(last_seen_at), "
+                "COUNT(*) FILTER (WHERE last_seen_at >= NOW() - INTERVAL '24 hours') "
+                "FROM smclick_message",
+                "smclick_message",
+            )
+            if r:
+                checks["smclick_message"] = {
+                    "total": r[0],
+                    "last_event_time": str(r[1]) if r[1] else None,
+                    "last_seen": str(r[2]) if r[2] else None,
+                    "updated_24h": r[3],
+                }
 
-            cur.execute("SELECT COUNT(*) FROM smclick_message WHERE last_seen_at >= NOW() - INTERVAL '24 hours'")
-            checks["messages_updated_24h"] = cur.fetchone()[0]
+            checks["server_now"] = str(cur.execute("SELECT NOW()") or cur.fetchone()[0])
 
         return JsonResponse(checks)
     except Exception as exc:
