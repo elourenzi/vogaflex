@@ -369,14 +369,13 @@ def dashboard_stage_stratification_api(request):
           FROM conv c
           {where_sql}
         ),
-        template_only_chats AS (
-          SELECT sm.chat_id::text AS chat_id
+        chat_msg_flags AS (
+          SELECT sm.chat_id::text AS chat_id,
+            bool_or(sm.from_me = true AND sm.sent_by_name IS NOT NULL AND sm.sent_by_name != '') AS has_vendor_msg,
+            bool_and(sm.from_me = true AND sm.message_type = 'template') AND NOT bool_or(sm.from_me = false) AS is_template_only
           FROM smclick_message sm
           JOIN filtered f ON f.chat_id = sm.chat_id::text
           GROUP BY sm.chat_id
-          HAVING COUNT(*) FILTER (WHERE sm.from_me = false) = 0
-             AND COUNT(*) FILTER (WHERE sm.from_me = true AND sm.message_type != 'template') = 0
-             AND COUNT(*) FILTER (WHERE sm.from_me = true AND sm.message_type = 'template') > 0
         ),
         classified AS (
           SELECT
@@ -389,6 +388,7 @@ def dashboard_stage_stratification_api(request):
             f.updated_ts,
             f.is_template_only,
             CASE
+              WHEN stage_norm IN ('waiting', 'screening') AND f.has_vendor_msg THEN 'em_atendimento'
               WHEN stage_norm = 'waiting' THEN 'aguardando'
               WHEN stage_norm = 'screening' THEN 'triagem'
               WHEN stage_norm = 'active' THEN 'ativo'
@@ -415,6 +415,7 @@ def dashboard_stage_stratification_api(request):
               ELSE NULL
             END AS stage_key,
             CASE
+              WHEN stage_norm IN ('waiting', 'screening') AND f.has_vendor_msg THEN 3
               WHEN stage_norm = 'waiting' THEN 1
               WHEN stage_norm = 'screening' THEN 2
               WHEN stage_norm IN ('em atendimento', 'andamento') THEN 3
@@ -453,9 +454,10 @@ def dashboard_stage_stratification_api(request):
                 'áàâãäéèêëíìîïóòôõöúùûüç',
                 'aaaaaeeeeiiiiooooouuuuc'
               ) AS status_norm,
-              CASE WHEN tpl.chat_id IS NOT NULL THEN true ELSE false END AS is_template_only
+              COALESCE(cmf.is_template_only, false) AS is_template_only,
+              COALESCE(cmf.has_vendor_msg, false) AS has_vendor_msg
             FROM filtered f
-            LEFT JOIN template_only_chats tpl ON tpl.chat_id = f.chat_id
+            LEFT JOIN chat_msg_flags cmf ON cmf.chat_id = f.chat_id
           ) f
         )
         SELECT
