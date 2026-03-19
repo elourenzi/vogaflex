@@ -1571,9 +1571,7 @@ def dashboard_api(request):
         cache.set(_cache_key, _response_data, timeout=_cache_ttl)
         return JsonResponse(_response_data)
     except Exception as exc:
-        import traceback
-        tb = traceback.format_exc()
-        return JsonResponse({"error": str(exc), "traceback": tb}, status=500)
+        return JsonResponse({"error": str(exc)}, status=500)
 
 
 def dead_conversations_api(request):
