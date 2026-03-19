@@ -1946,7 +1946,6 @@ def alerts_api(request):
 
 
 @csrf_exempt
-@require_POST
 def smclick_debug(request):
     """Temporary diagnostic endpoint to check data flow."""
     try:
