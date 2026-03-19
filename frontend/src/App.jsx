@@ -230,11 +230,13 @@ const STAGE_TIMELINE_ORDER = [
   { key: "triagem", label: "Triagem" },
   { key: "em_atendimento", label: "Em atendimento" },
   { key: "ativo", label: "Ativo" },
+  { key: "cadastro", label: "Cadastro" },
   { key: "chamada_1", label: "1ª chamada" },
   { key: "chamada_2", label: "2ª chamada" },
   { key: "chamada_3", label: "3ª chamada" },
   { key: "proposta_enviada", label: "Proposta enviada" },
   { key: "pos_vendas", label: "Pós-vendas" },
+  { key: "finalizado", label: "Finalizado" },
   { key: "lixo", label: "Lixo" },
 ];
 
