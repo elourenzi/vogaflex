@@ -819,6 +819,7 @@ function AppContent({ onLogout }) {
     if (!dashboardDateFrom && !dashboardDateTo) {
       return () => {};
     }
+    if (dashboardFetchVersion === 0) return () => {};
     if (!dashboardVendor) return () => {};
     setStageTimelineLoading(true);
     const stageParams = dashboardVendor === "__geral__"
@@ -1185,7 +1186,7 @@ function AppContent({ onLogout }) {
     const params = new URLSearchParams();
     if (dashboardDateFrom) params.set("date_from", dashboardDateFrom);
     if (dashboardDateTo) params.set("date_to", dashboardDateTo);
-    if (dashboardVendor) params.set("vendedor", dashboardVendor);
+    if (dashboardVendor && dashboardVendor !== "__geral__") params.set("vendedor", dashboardVendor);
     fetch(`/api/dashboard/dead/?${params}`)
       .then((res) => res.json())
       .then((data) => setDeadContactsList(data.conversations || []))
@@ -1198,7 +1199,7 @@ function AppContent({ onLogout }) {
     const params = new URLSearchParams();
     if (dashboardDateFrom) params.set("date_from", dashboardDateFrom);
     if (dashboardDateTo) params.set("date_to", dashboardDateTo);
-    if (dashboardVendor) params.set("vendedor", dashboardVendor);
+    if (dashboardVendor && dashboardVendor !== "__geral__") params.set("vendedor", dashboardVendor);
     fetch(`/api/dashboard/alerts/?${params}`)
       .then((res) => res.json())
       .then((data) => {
