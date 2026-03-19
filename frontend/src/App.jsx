@@ -1870,10 +1870,9 @@ function AppContent({ onLogout }) {
                           const morreram     = vendorTotals.dead || 0;
                           const parados      = alertsData?.sem_retorno_2d?.length ?? null;
                           const semFollowup  = alertsData?.orcamento_sem_followup?.length ?? null;
+                          const pctVendedor = recebidos ? Math.round((comVendedor / recebidos) * 100) : 0;
+                          const pctBot = recebidos ? 100 - pctVendedor : 0;
                           const steps = [
-                            { label: "Contatos recebidos",     value: recebidos,    perda: null, note: "Todos os chats do período" },
-                            { label: "Com vendedor",           value: comVendedor,  perda: formatPercent(comVendedor, recebidos), note: "Interação humana" },
-                            { label: "Somente bot",            value: comBot,       perda: formatPercent(comBot, recebidos), note: "Sem vendedor", loss: true },
                             { label: "Parado há +2 dias",      value: parados,      perda: parados != null ? formatPercent(parados, recebidos) : null, note: "Do total", loss: true, onClick: () => parados && setAlertModalKey("sem_retorno_2d") },
                             { label: "Propostas enviadas",     value: propostas,    perda: formatPercent(recebidos - propostas, recebidos), note: "Sem proposta" },
                             { label: "Proposta sem follow-up", value: semFollowup,  perda: semFollowup != null ? formatPercent(semFollowup, propostas) : null, note: "Das propostas", loss: true, onClick: () => semFollowup && setAlertModalKey("orcamento_sem_followup") },
@@ -1881,6 +1880,27 @@ function AppContent({ onLogout }) {
                           ];
                           return (
                             <div className="pipeline-funnel">
+                              {/* Card especial: Contatos Recebidos com barra bot/vendedor */}
+                              <div className="pipeline-step pipeline-step--contatos" style={{gridColumn: "1 / span 2"}}>
+                                <p className="pipeline-step-label">Contatos recebidos</p>
+                                <p className="pipeline-step-value">{formatCount(recebidos)}</p>
+                                <div className="contatos-bar-wrapper">
+                                  <div className="contatos-bar">
+                                    <div className="contatos-bar-segment contatos-bar--vendedor" style={{width: `${pctVendedor}%`}} />
+                                    <div className="contatos-bar-segment contatos-bar--bot" style={{width: `${pctBot}%`}} />
+                                  </div>
+                                  <div className="contatos-bar-legend">
+                                    <span className="contatos-legend-item">
+                                      <span className="contatos-legend-dot contatos-legend-dot--vendedor" />
+                                      Com vendedor: {formatCount(comVendedor)} ({pctVendedor}%)
+                                    </span>
+                                    <span className="contatos-legend-item">
+                                      <span className="contatos-legend-dot contatos-legend-dot--bot" />
+                                      Somente bot: {formatCount(comBot)} ({pctBot}%)
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
                               {steps.map((s) => {
                                 const Tag = s.onClick ? "button" : "div";
                                 return (
