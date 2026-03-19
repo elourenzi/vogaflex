@@ -713,7 +713,7 @@ def dashboard_api(request):
                         ),
                         'total\\\\s*[:\\\\-]?\\\\s*r\\\\$\\\\s*([0-9\\\\.]+(?:,[0-9]{2})?)',
                         'g'
-                    ) AS matches ON TRUE
+                    ) AS matches
                     WHERE sm.content_text IS NOT NULL
                 ) src
                 WHERE src.msg_budget IS NOT NULL
