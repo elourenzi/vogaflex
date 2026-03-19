@@ -1613,17 +1613,12 @@ def alerts_api(request):
         sc.chat_created_at AS start_time,
         CASE WHEN sc.status IN ('finished', 'closed') THEN sc.chat_updated_at ELSE NULL END AS end_time,
         sc.inserted_at AS created_at, sc.refreshed_at AS updated_at,
-        sc.budget_value
+        sc.budget_value,
+        sc.current_stage
       FROM smclick_chat sc WHERE sc.chat_id IS NOT NULL
     """
 
     closed_stages = "('finished','closed')"
-    followup_stages = """(
-        'Contato feito','contato feito','Contato feito 2','contato feito 2',
-        '1ª chamada','1a chamada','2ª chamada','2a chamada','3ª chamada','3a chamada',
-        'Proposta enviada','proposta enviada'
-    )"""
-
     query = f"""
       WITH filtered AS (
         SELECT c.*
@@ -1724,9 +1719,8 @@ def alerts_api(request):
                ROUND(EXTRACT(EPOCH FROM (NOW() - COALESCE(lo.ts, f.created_at))) / 86400)::int AS extra_int
         FROM filtered f
         LEFT JOIN last_outbound lo ON lo.chat_id = f.chat_id
-        WHERE f.budget_value IS NOT NULL AND f.budget_value > 0
+        WHERE LOWER(COALESCE(f.current_stage, '')) = 'proposta enviada'
           AND f.current_funnel_stage NOT IN {closed_stages}
-          AND f.current_funnel_stage NOT IN {followup_stages}
           AND COALESCE(lo.ts, f.created_at) < NOW() - INTERVAL '2 days'
       )
 
