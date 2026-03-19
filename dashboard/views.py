@@ -1442,12 +1442,7 @@ def dashboard_api(request):
                   COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS dead_contacts,
                   AVG(COALESCE(bd.business_seconds, dm.duration_seconds)) AS avg_duration_seconds,
                   AVG(COALESCE(bh.business_seconds, dm.handoff_seconds)) AS avg_handoff_seconds,
-                  AVG(
-                    NULLIF(
-                      REGEXP_REPLACE(COALESCE(f.ai_agent_rating::text, ''), '[^0-9\\.]', '', 'g'),
-                      ''
-                    )::numeric
-                  ) AS avg_score
+                  0::numeric AS avg_score
                 FROM filtered f
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
                 LEFT JOIN structured_budget_values sbv ON sbv.chat_id = f.chat_id
@@ -1467,13 +1462,13 @@ def dashboard_api(request):
                 )
                 SELECT
                   f.attendant_name AS vendedor,
-                  COALESCE(CAST(f.ai_agent_rating AS TEXT), 'Sem score') AS score,
+                  'Sem score' AS score,
                   COUNT(*) AS total
                 FROM filtered f
                 WHERE f.attendant_name IS NOT NULL
                   AND NOT ({sdr_attendant_exclude_sql})
-                GROUP BY f.attendant_name, score
-                ORDER BY f.attendant_name, score;
+                GROUP BY f.attendant_name
+                ORDER BY f.attendant_name;
             """
 
             cursor.execute(sdr_summary_query)
