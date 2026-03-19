@@ -1139,6 +1139,12 @@ def dashboard_api(request):
             # Full query runs only for the vendor-specific call (~400 conversations).
             include_tma_tme = bool(vendedor and vendedor != "Todos")
 
+            _order_date_filter = ""
+            if date_from:
+                _order_date_filter += f" AND vo.created_at::date >= '{date_from}'::date"
+            if date_to:
+                _order_date_filter += f" AND vo.created_at::date <= '{date_to}'::date"
+
             if not include_tma_tme:
                 vendor_summary_query = f"""
                     WITH filtered_base AS (
@@ -1165,6 +1171,7 @@ def dashboard_api(request):
                       FROM checkout_chats ck
                       JOIN vogaflex_order vo ON vo.order_id = ck.order_id
                       WHERE vo.status != 'CANCELADO'
+                        {_order_date_filter}
                     )
                     SELECT
                       f.attendant_name AS vendedor,
@@ -1385,6 +1392,7 @@ def dashboard_api(request):
                   FROM checkout_chats ck
                   JOIN vogaflex_order vo ON vo.order_id = ck.order_id
                   WHERE vo.status != 'CANCELADO'
+                    {_order_date_filter}
                 )
                 SELECT
                   f.attendant_name AS vendedor,
