@@ -1907,7 +1907,7 @@ function AppContent({ onLogout }) {
                               <div className="pipeline-section pipeline-section--journey">
                                 <h4 className="pipeline-section-title">Jornada do cliente</h4>
                                 <div className="pipeline-funnel">
-                                  <div className="pipeline-step pipeline-step--contatos" style={{gridColumn: "1 / span 2"}}>
+                                  <div className="pipeline-step pipeline-step--contatos" style={{gridColumn: "1 / -1"}}>
                                     <p className="pipeline-step-label">Contatos recebidos</p>
                                     <p className="pipeline-step-value">{formatCount(recebidos)}</p>
                                     <div className="contatos-bar-wrapper">
