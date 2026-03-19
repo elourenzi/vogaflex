@@ -2059,13 +2059,16 @@ def smclick_force_sync(request):
 def smclick_backfill(request):
     """Trigger backfill_smclick + sync_smclick."""
     from django.core.management import call_command
-    import io
+    import io, os
     date_from = request.GET.get("date_from")
     date_to = request.GET.get("date_to")
     skip_messages = request.GET.get("skip_messages", "0") == "1"
+    api_key = request.GET.get("api_key") or os.environ.get("SMCLICK_API_KEY")
+    if not api_key:
+        return JsonResponse({"ok": False, "error": "SMCLICK_API_KEY not set"}, status=400)
     out = io.StringIO()
     try:
-        kwargs = {"stdout": out}
+        kwargs = {"stdout": out, "stderr": out, "api_key": api_key}
         if date_from:
             kwargs["date_from"] = date_from
         if date_to:
@@ -2077,7 +2080,13 @@ def smclick_backfill(request):
         call_command("sync_smclick", stdout=out)
         return JsonResponse({"ok": True, "output": out.getvalue()})
     except Exception as exc:
-        return JsonResponse({"ok": False, "error": str(exc), "output": out.getvalue()}, status=500)
+        import traceback
+        return JsonResponse({
+            "ok": False,
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+            "output": out.getvalue(),
+        }, status=500)
 
 
 @csrf_exempt
