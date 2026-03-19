@@ -1870,9 +1870,6 @@ function AppContent({ onLogout }) {
                           const propostas    = vendorTotals.budgetsCount || 0;
                           const checkouts    = vendorTotals.checkoutsCount || 0;
                           const compras      = vendorTotals.purchasesCount || 0;
-                          const morreram     = vendorTotals.dead || 0;
-                          const parados      = alertsData?.sem_retorno_2d?.length ?? null;
-                          const semFollowup  = alertsData?.orcamento_sem_followup?.length ?? null;
                           const pctVendedor = recebidos ? Math.round((comVendedor / recebidos) * 100) : 0;
                           const pctBot = recebidos ? 100 - pctVendedor : 0;
                           const journeySteps = [
@@ -1880,11 +1877,6 @@ function AppContent({ onLogout }) {
                             { label: "Propostas enviadas",    value: propostas,    perda: formatPercent(propostas, comVendedor), note: "Dos c/ interação" },
                             { label: "Checkouts enviados",    value: checkouts,    perda: formatPercent(checkouts, propostas), note: "Das propostas" },
                             { label: "Compras realizadas",    value: compras,      perda: formatPercent(compras, checkouts), note: "Dos checkouts" },
-                          ];
-                          const alertSteps = [
-                            { label: "Parado há +2 dias",      value: parados,     perda: parados != null ? formatPercent(parados, recebidos) : null, note: "Do total", loss: true, onClick: () => parados && setAlertModalKey("sem_retorno_2d") },
-                            { label: "Proposta sem follow-up", value: semFollowup, perda: semFollowup != null ? formatPercent(semFollowup, propostas) : null, note: "Das propostas", loss: true, onClick: () => semFollowup && setAlertModalKey("orcamento_sem_followup") },
-                            { label: "Morreram",               value: morreram,    perda: formatPercent(morreram, recebidos), note: "Do total", loss: true, onClick: openDeadContacts },
                           ];
                           const renderStep = (s) => {
                             const Tag = s.onClick ? "button" : "div";
@@ -1950,12 +1942,6 @@ function AppContent({ onLogout }) {
                                     <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsCount > 0 ? vendorTotals.budgetsSum / vendorTotals.budgetsCount : 0)}</p>
                                     <div className="pipeline-step-foot"><span className="pipeline-step-note">Média por proposta</span></div>
                                   </div>
-                                </div>
-                              </div>
-                              <div className="pipeline-section pipeline-section--alerts">
-                                <h4 className="pipeline-section-title">Alertas</h4>
-                                <div className="pipeline-funnel pipeline-funnel--alerts">
-                                  {alertSteps.map(renderStep)}
                                 </div>
                               </div>
                             </>

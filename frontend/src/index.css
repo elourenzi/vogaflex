@@ -1713,16 +1713,6 @@ h3 {
 .pipeline-section--journey .pipeline-section-title {
   color: #2e7d32;
 }
-.pipeline-section--alerts {
-  background: rgba(237, 176, 21, 0.08);
-  border: 1px solid rgba(237, 176, 21, 0.25);
-}
-.pipeline-section--alerts .pipeline-section-title {
-  color: #b8860b;
-}
-.pipeline-funnel--alerts {
-  grid-template-columns: repeat(3, 1fr);
-}
 
 .pipeline-funnel {
   display: grid;
@@ -1866,16 +1856,10 @@ h3 {
   .pipeline-funnel {
     grid-template-columns: repeat(3, 1fr);
   }
-  .pipeline-funnel--alerts {
-    grid-template-columns: repeat(3, 1fr);
-  }
 }
 
 @media (max-width: 560px) {
   .pipeline-funnel {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .pipeline-funnel--alerts {
     grid-template-columns: repeat(2, 1fr);
   }
 }
