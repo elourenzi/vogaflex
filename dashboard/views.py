@@ -1177,7 +1177,7 @@ def dashboard_api(request):
                       0::float AS avg_duration_seconds,
                       0::float AS avg_handoff_seconds,
                       0::float AS avg_score,
-                      COUNT(ck.chat_id) AS checkouts_count
+                      COUNT(DISTINCT ck.chat_id) AS checkouts_count
                     FROM filtered f
                     LEFT JOIN checkout_chats ck ON ck.chat_id = f.chat_id
                     WHERE f.attendant_name IS NOT NULL
@@ -1394,7 +1394,7 @@ def dashboard_api(request):
                   AVG(COALESCE(bd.business_seconds, dm.duration_seconds)) AS avg_duration_seconds,
                   AVG(COALESCE(bh.business_seconds, dm.handoff_seconds)) AS avg_handoff_seconds,
                   0::numeric AS avg_score,
-                  COUNT(ck.chat_id) AS checkouts_count
+                  COUNT(DISTINCT ck.chat_id) AS checkouts_count
                 FROM filtered f
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
                 LEFT JOIN business_duration bd ON bd.chat_id = f.chat_id
