@@ -935,7 +935,7 @@ def dashboard_api(request):
                   SELECT
                     f.chat_id,
                     translate(
-                      lower(COALESCE(f.contact_reason, '')),
+                      lower(COALESCE(f.loss_reason, '')),
                       'áàâãäéèêëíìîïóòôõöúùûüç',
                       'aaaaaeeeeiiiiooooouuuuc'
                     ) AS reason_norm,
@@ -1006,7 +1006,7 @@ def dashboard_api(request):
                   SELECT
                     f.chat_id,
                     translate(
-                      lower(COALESCE(f.contact_reason, '')),
+                      lower(COALESCE(f.loss_reason, '')),
                       'áàâãäéèêëíìîïóòôõöúùûüç',
                       'aaaaaeeeeiiiiooooouuuuc'
                     ) AS reason_norm,
@@ -1177,7 +1177,7 @@ def dashboard_api(request):
                     ),
                     filtered AS (
                       SELECT fb.*,
-                        translate(lower(COALESCE(fb.contact_reason, '')),
+                        translate(lower(COALESCE(fb.loss_reason, '')),
                           'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc'
                         ) AS reason_norm
                       FROM filtered_base fb
@@ -1217,7 +1217,7 @@ def dashboard_api(request):
                   SELECT
                     fb.*,
                     translate(
-                      lower(COALESCE(fb.contact_reason, '')),
+                      lower(COALESCE(fb.loss_reason, '')),
                       'áàâãäéèêëíìîïóòôõöúùûüç',
                       'aaaaaeeeeiiiiooooouuuuc'
                     ) AS reason_norm
