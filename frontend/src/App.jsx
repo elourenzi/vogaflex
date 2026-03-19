@@ -993,8 +993,9 @@ function AppContent({ onLogout }) {
       budgetsSumDetected:
         acc.budgetsSumDetected + (item.budgets_sum_detected || 0),
       dead: acc.dead + (item.dead_contacts || 0),
+      checkoutsCount: acc.checkoutsCount + (item.checkouts_count || 0),
     }),
-    { contacts: 0, budgetsCount: 0, budgetsSum: 0, budgetsSumDetected: 0, dead: 0 }
+    { contacts: 0, budgetsCount: 0, budgetsSum: 0, budgetsSumDetected: 0, dead: 0, checkoutsCount: 0 }
   );
 
   const selectedVendorData = vendorList.find(
@@ -1866,6 +1867,7 @@ function AppContent({ onLogout }) {
                           const comVendedor  = contactsInteraction?.com_vendedor || 0;
                           const comBot       = contactsInteraction?.com_bot || 0;
                           const propostas    = vendorTotals.budgetsCount || 0;
+                          const checkouts    = vendorTotals.checkoutsCount || 0;
                           const morreram     = vendorTotals.dead || 0;
                           const parados      = alertsData?.sem_retorno_2d?.length ?? null;
                           const semFollowup  = alertsData?.orcamento_sem_followup?.length ?? null;
@@ -1874,6 +1876,7 @@ function AppContent({ onLogout }) {
                           const steps = [
                             { label: "Parado há +2 dias",      value: parados,      perda: parados != null ? formatPercent(parados, recebidos) : null, note: "Do total", loss: true, onClick: () => parados && setAlertModalKey("sem_retorno_2d") },
                             { label: "Propostas enviadas",     value: propostas,    perda: formatPercent(recebidos - propostas, recebidos), note: "Sem proposta" },
+                            { label: "Checkouts enviados",     value: checkouts,    perda: formatPercent(checkouts, propostas), note: "Das propostas" },
                             { label: "Proposta sem follow-up", value: semFollowup,  perda: semFollowup != null ? formatPercent(semFollowup, propostas) : null, note: "Das propostas", loss: true, onClick: () => semFollowup && setAlertModalKey("orcamento_sem_followup") },
                             { label: "Morreram",               value: morreram,     perda: formatPercent(morreram, recebidos), note: "Do total", loss: true, onClick: openDeadContacts },
                           ];
@@ -2002,6 +2005,7 @@ function AppContent({ onLogout }) {
                                 const morreram     = selectedVendorMerged.dead_contacts || 0;
                                 const comInteracao = Math.max(0, recebidos - morreram);
                                 const propostas    = selectedVendorMerged.budgets_detected_count || selectedVendorMerged.budgets_count || 0;
+                                const checkouts    = selectedVendorMerged.checkouts_count || 0;
                                 const parados      = alertsData?.sem_retorno_2d?.filter(c => c.vendedor_nome === selectedVendorMerged.vendedor)?.length ?? null;
                                 const semFollowup  = alertsData?.orcamento_sem_followup?.filter(c => c.vendedor_nome === selectedVendorMerged.vendedor)?.length ?? null;
                                 const steps = [
@@ -2009,6 +2013,7 @@ function AppContent({ onLogout }) {
                                   { label: "Contatos c/ interação",  value: comInteracao, perda: formatPercent(recebidos - comInteracao, recebidos), note: "Sem interação" },
                                   { label: "Parado há +2 dias",      value: parados,      perda: parados != null ? formatPercent(parados, recebidos) : null, note: "Do total", loss: true, onClick: () => parados && setAlertModalKey("sem_retorno_2d") },
                                   { label: "Propostas enviadas",     value: propostas,    perda: formatPercent(recebidos - propostas, recebidos), note: "Sem proposta" },
+                                  { label: "Checkouts enviados",     value: checkouts,    perda: formatPercent(checkouts, propostas), note: "Das propostas" },
                                   { label: "Proposta sem follow-up", value: semFollowup,  perda: semFollowup != null ? formatPercent(semFollowup, propostas) : null, note: "Das propostas", loss: true, onClick: () => semFollowup && setAlertModalKey("orcamento_sem_followup") },
                                   { label: "Morreram",               value: morreram,     perda: formatPercent(morreram, recebidos), note: "Do total", loss: true, onClick: openDeadContacts },
                                 ];

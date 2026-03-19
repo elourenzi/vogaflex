@@ -1151,6 +1151,14 @@ def dashboard_api(request):
                         ) AS reason_norm
                       FROM filtered_base fb
                     )
+                    ,
+                    checkout_chats AS (
+                      SELECT DISTINCT sm.chat_id::text AS chat_id
+                      FROM smclick_message sm
+                      JOIN filtered f ON f.chat_id = sm.chat_id::text
+                      WHERE sm.from_me = true
+                        AND sm.content_text ILIKE '%%vogaflex.com.br/checkout/finalizar%%'
+                    )
                     SELECT
                       f.attendant_name AS vendedor,
                       COUNT(*) FILTER (
@@ -1168,8 +1176,10 @@ def dashboard_api(request):
                       0 AS dead_contacts,
                       0::float AS avg_duration_seconds,
                       0::float AS avg_handoff_seconds,
-                      0::float AS avg_score
+                      0::float AS avg_score,
+                      COUNT(ck.chat_id) AS checkouts_count
                     FROM filtered f
+                    LEFT JOIN checkout_chats ck ON ck.chat_id = f.chat_id
                     WHERE f.attendant_name IS NOT NULL
                       AND NOT ({sdr_attendant_exclude_sql})
                     GROUP BY f.attendant_name
@@ -1352,6 +1362,13 @@ def dashboard_api(request):
                   FROM filtered f
                   LEFT JOIN direct_handoff_business dhb ON dhb.chat_id = f.chat_id
                   LEFT JOIN direct_duration_business ddb ON ddb.chat_id = f.chat_id
+                ),
+                checkout_chats AS (
+                  SELECT DISTINCT sm.chat_id::text AS chat_id
+                  FROM smclick_message sm
+                  JOIN filtered f ON f.chat_id = sm.chat_id::text
+                  WHERE sm.from_me = true
+                    AND sm.content_text ILIKE '%%vogaflex.com.br/checkout/finalizar%%'
                 )
                 SELECT
                   f.attendant_name AS vendedor,
@@ -1376,12 +1393,14 @@ def dashboard_api(request):
                   COUNT(*) FILTER (WHERE COALESCE(ms.outbound_count, 0) = 0) AS dead_contacts,
                   AVG(COALESCE(bd.business_seconds, dm.duration_seconds)) AS avg_duration_seconds,
                   AVG(COALESCE(bh.business_seconds, dm.handoff_seconds)) AS avg_handoff_seconds,
-                  0::numeric AS avg_score
+                  0::numeric AS avg_score,
+                  COUNT(ck.chat_id) AS checkouts_count
                 FROM filtered f
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
                 LEFT JOIN business_duration bd ON bd.chat_id = f.chat_id
                 LEFT JOIN business_handoff bh ON bh.chat_id = f.chat_id
                 LEFT JOIN direct_metrics dm ON dm.chat_id = f.chat_id
+                LEFT JOIN checkout_chats ck ON ck.chat_id = f.chat_id
                 WHERE f.attendant_name IS NOT NULL
                   AND NOT ({sdr_attendant_exclude_sql})
                 GROUP BY f.attendant_name
