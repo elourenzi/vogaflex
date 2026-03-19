@@ -369,6 +369,15 @@ def dashboard_stage_stratification_api(request):
           FROM conv c
           {where_sql}
         ),
+        template_only_chats AS (
+          SELECT sm.chat_id::text AS chat_id
+          FROM smclick_message sm
+          JOIN filtered f ON f.chat_id = sm.chat_id::text
+          GROUP BY sm.chat_id
+          HAVING COUNT(*) FILTER (WHERE sm.from_me = false) = 0
+             AND COUNT(*) FILTER (WHERE sm.from_me = true AND sm.message_type != 'template') = 0
+             AND COUNT(*) FILTER (WHERE sm.from_me = true AND sm.message_type = 'template') > 0
+        ),
         classified AS (
           SELECT
             f.chat_id,
@@ -378,6 +387,7 @@ def dashboard_stage_stratification_api(request):
             f.stage_raw,
             f.created_ts,
             f.updated_ts,
+            CASE WHEN tpl.chat_id IS NOT NULL THEN true ELSE false END AS is_template_only,
             CASE
               WHEN stage_norm = 'waiting' THEN 'aguardando'
               WHEN stage_norm = 'screening' THEN 'triagem'
@@ -444,6 +454,7 @@ def dashboard_stage_stratification_api(request):
                 'aaaaaeeeeiiiiooooouuuuc'
               ) AS status_norm
             FROM filtered f
+            LEFT JOIN template_only_chats tpl ON tpl.chat_id = f.chat_id
           ) f
         )
         SELECT
@@ -455,7 +466,8 @@ def dashboard_stage_stratification_api(request):
           c.vendedor_nome,
           c.stage_raw,
           c.created_ts,
-          c.updated_ts
+          c.updated_ts,
+          c.is_template_only
         FROM classified c
         WHERE c.stage_key IS NOT NULL
         ORDER BY c.stage_order ASC, c.updated_ts DESC NULLS LAST, c.created_ts DESC NULLS LAST;
@@ -468,7 +480,7 @@ def dashboard_stage_stratification_api(request):
             rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
         stage_map = {
-            key: {"key": key, "label": label, "total": 0, "clients": []}
+            key: {"key": key, "label": label, "total": 0, "template_only_count": 0, "clients": []}
             for key, label in STAGE_STRATIFICATION_ORDER
         }
         stage_vendor_totals = {key: {} for key, _ in STAGE_STRATIFICATION_ORDER}
@@ -481,6 +493,8 @@ def dashboard_stage_stratification_api(request):
                 continue
             vendor_name = row.get("vendedor_nome") or "Sem vendedor"
             bucket["total"] += 1
+            if row.get("is_template_only"):
+                bucket["template_only_count"] += 1
             stage_vendor_totals[stage_key][vendor_name] = (
                 stage_vendor_totals[stage_key].get(vendor_name, 0) + 1
             )
@@ -874,13 +888,24 @@ def dashboard_api(request):
                   JOIN _tmp_filtered f ON f.chat_id = sm.chat_id::text
                   WHERE sm.from_me = true
                     AND sm.sent_by_name IS NOT NULL
+                ),
+                template_only AS (
+                  SELECT f.chat_id
+                  FROM _tmp_filtered f
+                  JOIN smclick_message sm ON sm.chat_id::text = f.chat_id
+                  GROUP BY f.chat_id
+                  HAVING COUNT(*) FILTER (WHERE sm.from_me = false) = 0
+                     AND COUNT(*) FILTER (WHERE sm.from_me = true AND sm.message_type != 'template') = 0
+                     AND COUNT(*) FILTER (WHERE sm.from_me = true AND sm.message_type = 'template') > 0
                 )
                 SELECT
                   COUNT(*) AS total,
                   COUNT(vm.chat_id) AS com_vendedor,
-                  COUNT(*) - COUNT(vm.chat_id) AS com_bot
+                  COUNT(*) - COUNT(vm.chat_id) - COUNT(tpl.chat_id) AS com_bot,
+                  COUNT(tpl.chat_id) AS followup_sem_retorno
                 FROM _tmp_filtered f
                 LEFT JOIN vendor_msgs vm ON vm.chat_id = f.chat_id
+                LEFT JOIN template_only tpl ON tpl.chat_id = f.chat_id
             """
             cursor.execute(contacts_interaction_query)
             ci_row = cursor.fetchone()
@@ -888,6 +913,7 @@ def dashboard_api(request):
                 "total": ci_row[0] if ci_row else 0,
                 "com_vendedor": ci_row[1] if ci_row else 0,
                 "com_bot": ci_row[2] if ci_row else 0,
+                "followup_sem_retorno": ci_row[3] if ci_row else 0,
             }
 
             sdr_scope_sql = """

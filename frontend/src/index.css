@@ -515,15 +515,33 @@ button.funnel-step {
   background: #eceef1;
   border: 1px solid rgba(47, 48, 61, 0.1);
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  justify-content: flex-end;
   padding: 3px;
+  overflow: hidden;
 }
 
 .stage-timeline-bar {
   width: 100%;
-  border-radius: 999px;
+}
+
+.stage-timeline-bar--real {
   background: linear-gradient(180deg, #c82650 0%, #8f1839 100%);
-  min-height: 8px;
+  border-radius: 0 0 999px 999px;
+}
+
+.stage-timeline-bar--template {
+  background: linear-gradient(180deg, #c82650 0%, #8f1839 100%);
+  opacity: 0.25;
+  border-radius: 999px 999px 0 0;
+}
+
+.stage-timeline-bar--real:first-child {
+  border-radius: 999px;
+}
+
+.stage-timeline-bar--template:last-child {
+  border-radius: 999px;
 }
 
 .stage-timeline-label {
@@ -1834,6 +1852,9 @@ h3 {
 .contatos-bar--vendedor {
   background: #2e7d32;
 }
+.contatos-bar--followup {
+  background: #e6a817;
+}
 .contatos-bar--bot {
   background: #c0542c;
 }
@@ -1858,6 +1879,9 @@ h3 {
 }
 .contatos-legend-dot--vendedor {
   background: #2e7d32;
+}
+.contatos-legend-dot--followup {
+  background: #e6a817;
 }
 .contatos-legend-dot--bot {
   background: #c0542c;

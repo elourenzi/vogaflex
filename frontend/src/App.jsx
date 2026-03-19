@@ -1076,6 +1076,7 @@ function AppContent({ onLogout }) {
           key: String(stage?.key || ""),
           label: String(stage?.label || ""),
           total: Number(stage?.total) || 0,
+          template_only_count: Number(stage?.template_only_count) || 0,
           clients: Array.isArray(stage?.clients) ? stage.clients : [],
         },
       ])
@@ -1087,6 +1088,7 @@ function AppContent({ onLogout }) {
           key: item.key,
           label: item.label,
           total: 0,
+          template_only_count: 0,
           clients: [],
         }
       );
@@ -1899,11 +1901,13 @@ function AppContent({ onLogout }) {
                           const recebidos    = contactsInteraction?.total || vendorTotals.contacts || 0;
                           const comVendedor  = contactsInteraction?.com_vendedor || 0;
                           const comBot       = contactsInteraction?.com_bot || 0;
+                          const followupSemRetorno = contactsInteraction?.followup_sem_retorno || 0;
                           const propostas    = vendorTotals.budgetsCount || 0;
                           const checkouts    = vendorTotals.checkoutsCount || 0;
                           const compras      = vendorTotals.purchasesCount || 0;
                           const pctVendedor = recebidos ? Math.round((comVendedor / recebidos) * 100) : 0;
-                          const pctBot = recebidos ? 100 - pctVendedor : 0;
+                          const pctFollowup = recebidos ? Math.round((followupSemRetorno / recebidos) * 100) : 0;
+                          const pctBot = recebidos ? 100 - pctVendedor - pctFollowup : 0;
                           const journeySteps = [
                             { label: "Contatos c/ interação", value: comVendedor,  perda: formatPercent(recebidos - comVendedor, recebidos), note: "Do total" },
                             { label: "Propostas enviadas",    value: propostas,    perda: formatPercent(propostas, comVendedor), note: "Dos c/ interação" },
@@ -1937,12 +1941,17 @@ function AppContent({ onLogout }) {
                                     <div className="contatos-bar-wrapper">
                                       <div className="contatos-bar">
                                         <div className="contatos-bar-segment contatos-bar--vendedor" style={{width: `${pctVendedor}%`}} />
+                                        <div className="contatos-bar-segment contatos-bar--followup" style={{width: `${pctFollowup}%`}} />
                                         <div className="contatos-bar-segment contatos-bar--bot" style={{width: `${pctBot}%`}} />
                                       </div>
                                       <div className="contatos-bar-legend">
                                         <span className="contatos-legend-item">
                                           <span className="contatos-legend-dot contatos-legend-dot--vendedor" />
                                           Com vendedor: {formatCount(comVendedor)} ({pctVendedor}%)
+                                        </span>
+                                        <span className="contatos-legend-item">
+                                          <span className="contatos-legend-dot contatos-legend-dot--followup" />
+                                          Follow-up sem retorno: {formatCount(followupSemRetorno)} ({pctFollowup}%)
                                         </span>
                                         <span className="contatos-legend-item">
                                           <span className="contatos-legend-dot contatos-legend-dot--bot" />
@@ -2029,10 +2038,11 @@ function AppContent({ onLogout }) {
                         ) : (
                           <div className="stage-timeline-grid">
                             {stageTimelineStages.map((stage) => {
-                              const height = Math.max(
-                                8,
-                                Math.round((stage.total / stageTimelineMax) * 100)
-                              );
+                              const real = stage.total - (stage.template_only_count || 0);
+                              const tpl = stage.template_only_count || 0;
+                              const realH = Math.round((real / stageTimelineMax) * 100);
+                              const tplH = Math.round((tpl / stageTimelineMax) * 100);
+                              const totalH = Math.max(8, realH + tplH);
                               const isActive = selectedTimelineStage?.key === stage.key;
                               return (
                                 <button
@@ -2047,10 +2057,8 @@ function AppContent({ onLogout }) {
                                     {formatCount(stage.total)}
                                   </span>
                                   <span className="stage-timeline-track">
-                                    <span
-                                      className="stage-timeline-bar"
-                                      style={{ height: `${height}%` }}
-                                    />
+                                    <span className="stage-timeline-bar stage-timeline-bar--template" style={{ height: `${tplH}%` }} />
+                                    <span className="stage-timeline-bar stage-timeline-bar--real" style={{ height: `${realH}%`, minHeight: stage.total > 0 ? 6 : 0 }} />
                                   </span>
                                   <span className="stage-timeline-label">
                                     {stage.label}
@@ -2154,10 +2162,10 @@ function AppContent({ onLogout }) {
                                 </div>
                                 <div className="stage-timeline-grid">
                                   {stageTimelineStages.map((stage) => {
-                                    const height = Math.max(
-                                      8,
-                                      Math.round((stage.total / stageTimelineMax) * 100)
-                                    );
+                                    const real = stage.total - (stage.template_only_count || 0);
+                                    const tpl = stage.template_only_count || 0;
+                                    const realH = Math.round((real / stageTimelineMax) * 100);
+                                    const tplH = Math.round((tpl / stageTimelineMax) * 100);
                                     const isActive = selectedTimelineStage?.key === stage.key;
                                     return (
                                       <button
@@ -2172,10 +2180,8 @@ function AppContent({ onLogout }) {
                                           {formatCount(stage.total)}
                                         </span>
                                         <span className="stage-timeline-track">
-                                          <span
-                                            className="stage-timeline-bar"
-                                            style={{ height: `${height}%` }}
-                                          />
+                                          <span className="stage-timeline-bar stage-timeline-bar--template" style={{ height: `${tplH}%` }} />
+                                          <span className="stage-timeline-bar stage-timeline-bar--real" style={{ height: `${realH}%`, minHeight: stage.total > 0 ? 6 : 0 }} />
                                         </span>
                                         <span className="stage-timeline-label">
                                           {stage.label}
