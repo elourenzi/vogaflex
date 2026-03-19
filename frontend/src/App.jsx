@@ -1932,6 +1932,11 @@ function AppContent({ onLogout }) {
                                   <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsSum)}</p>
                                   <div className="pipeline-step-foot"><span className="pipeline-step-note">Valor total orçado</span></div>
                                 </div>
+                                <div className="pipeline-step">
+                                  <p className="pipeline-step-label">Ticket médio</p>
+                                  <p className="pipeline-step-value">{formatCurrency(vendorTotals.budgetsCount > 0 ? vendorTotals.budgetsSum / vendorTotals.budgetsCount : 0)}</p>
+                                  <div className="pipeline-step-foot"><span className="pipeline-step-note">Média por proposta</span></div>
+                                </div>
                               </div>
                             </div>
                           );
