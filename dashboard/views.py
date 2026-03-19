@@ -364,10 +364,29 @@ def dashboard_stage_stratification_api(request):
           FROM smclick_chat sc
           WHERE sc.chat_id IS NOT NULL
         ),
-        filtered AS (
+        filtered_raw AS (
           SELECT *
           FROM conv c
           {where_sql}
+        ),
+        filtered AS (
+          SELECT DISTINCT ON (COALESCE(NULLIF(f.cliente_telefone, ''), f.chat_id))
+            f.*
+          FROM filtered_raw f
+          ORDER BY
+            COALESCE(NULLIF(f.cliente_telefone, ''), f.chat_id),
+            CASE
+              WHEN f.stage_raw NOT IN ('waiting', 'screening', 'finished', 'closed', 'active', 'pre-finish')
+                   AND f.stage_raw IS NOT NULL THEN 0
+              WHEN f.stage_raw = 'active' THEN 1
+              WHEN f.stage_raw = 'screening' THEN 2
+              WHEN f.stage_raw = 'waiting' THEN 3
+              WHEN f.stage_raw = 'finished' THEN 4
+              WHEN f.stage_raw = 'closed' THEN 5
+              WHEN f.stage_raw = 'pre-finish' THEN 5
+              ELSE 6
+            END,
+            f.updated_ts DESC NULLS LAST
         ),
         chat_msg_flags AS (
           SELECT sm.chat_id::text AS chat_id,
@@ -616,14 +635,42 @@ def dashboard_api(request):
       WHERE sc.chat_id IS NOT NULL
     """
     filtered_base_sql = f"""
-      SELECT c.*
+      SELECT DISTINCT ON (COALESCE(NULLIF(c.contact_phone, ''), c.chat_id))
+        c.*
       FROM ({base_sql}) c
       {where_sql}
+      ORDER BY
+        COALESCE(NULLIF(c.contact_phone, ''), c.chat_id),
+        CASE
+          WHEN c.current_stage IS NOT NULL
+               AND c.current_stage NOT IN ('waiting', 'screening', 'finished', 'closed', 'active', 'pre-finish')
+               THEN 0
+          WHEN c.current_funnel_stage = 'active' THEN 1
+          WHEN c.current_funnel_stage = 'screening' THEN 2
+          WHEN c.current_funnel_stage = 'waiting' THEN 3
+          WHEN c.current_funnel_stage IN ('finished', 'closed') THEN 4
+          ELSE 5
+        END,
+        c.updated_at DESC NULLS LAST
     """
     filtered_base_sql_no_vendor = f"""
-      SELECT c.*
+      SELECT DISTINCT ON (COALESCE(NULLIF(c.contact_phone, ''), c.chat_id))
+        c.*
       FROM ({base_sql}) c
       {where_sql_no_vendor}
+      ORDER BY
+        COALESCE(NULLIF(c.contact_phone, ''), c.chat_id),
+        CASE
+          WHEN c.current_stage IS NOT NULL
+               AND c.current_stage NOT IN ('waiting', 'screening', 'finished', 'closed', 'active', 'pre-finish')
+               THEN 0
+          WHEN c.current_funnel_stage = 'active' THEN 1
+          WHEN c.current_funnel_stage = 'screening' THEN 2
+          WHEN c.current_funnel_stage = 'waiting' THEN 3
+          WHEN c.current_funnel_stage IN ('finished', 'closed') THEN 4
+          ELSE 5
+        END,
+        c.updated_at DESC NULLS LAST
     """
     owners_id_col = _owners_view_id_column()
     owners_cte_sql = ""
@@ -1616,8 +1663,10 @@ def dead_conversations_api(request):
       SELECT
         sc.chat_id::text AS chat_id,
         sc.contact_name,
+        sc.contact_phone,
         sc.attendant_name,
         sc.status AS current_funnel_stage,
+        sc.current_stage,
         sc.chat_created_at AS start_time,
         CASE WHEN sc.status IN ('finished', 'closed') THEN sc.chat_updated_at ELSE NULL END AS end_time,
         sc.inserted_at AS created_at,
@@ -1628,9 +1677,23 @@ def dead_conversations_api(request):
 
     query = f"""
         WITH filtered AS (
-          SELECT c.*
+          SELECT DISTINCT ON (COALESCE(NULLIF(c.contact_phone, ''), c.chat_id))
+            c.*
           FROM ({base_sql}) c
           {where_sql}
+          ORDER BY
+            COALESCE(NULLIF(c.contact_phone, ''), c.chat_id),
+            CASE
+              WHEN c.current_stage IS NOT NULL
+                   AND c.current_stage NOT IN ('waiting', 'screening', 'finished', 'closed', 'active', 'pre-finish')
+                   THEN 0
+              WHEN c.current_funnel_stage = 'active' THEN 1
+              WHEN c.current_funnel_stage = 'screening' THEN 2
+              WHEN c.current_funnel_stage = 'waiting' THEN 3
+              WHEN c.current_funnel_stage IN ('finished', 'closed') THEN 4
+              ELSE 5
+            END,
+            c.updated_at DESC NULLS LAST
         ),
         message_stats AS (
           SELECT sm.chat_id::text AS chat_id,
@@ -1703,9 +1766,23 @@ def alerts_api(request):
     closed_stages = "('finished','closed')"
     query = f"""
       WITH filtered AS (
-        SELECT c.*
+        SELECT DISTINCT ON (COALESCE(NULLIF(c.contact_phone, ''), c.chat_id))
+          c.*
         FROM ({base_sql}) c
         {where_sql}
+        ORDER BY
+          COALESCE(NULLIF(c.contact_phone, ''), c.chat_id),
+          CASE
+            WHEN c.current_stage IS NOT NULL
+                 AND c.current_stage NOT IN ('waiting', 'screening', 'finished', 'closed', 'active', 'pre-finish')
+                 THEN 0
+            WHEN c.current_funnel_stage = 'active' THEN 1
+            WHEN c.current_funnel_stage = 'screening' THEN 2
+            WHEN c.current_funnel_stage = 'waiting' THEN 3
+            WHEN c.current_funnel_stage IN ('finished', 'closed') THEN 4
+            ELSE 5
+          END,
+          c.updated_at DESC NULLS LAST
       ),
       -- Handoff: first human vendor message per chat (sent_by_name populated OR *Name* pattern)
       handoff_ts AS (
