@@ -15,6 +15,16 @@ python manage.py setup_db &
   done
 ) &
 
+# Background: run sync_orders every 30 minutes
+(
+  sleep 60
+  python manage.py sync_orders --days 7 2>&1 | tail -5
+  while true; do
+    sleep 1800
+    python manage.py sync_orders --days 7 2>&1 | tail -5
+  done
+) &
+
 # Start gunicorn (foreground)
 exec gunicorn vogaflex.wsgi:application \
   --bind "0.0.0.0:${PORT:-8000}" \

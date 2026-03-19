@@ -1158,6 +1158,15 @@ def dashboard_api(request):
                       JOIN filtered f ON f.chat_id = sm.chat_id::text
                       WHERE sm.from_me = true
                         AND sm.content_text ILIKE '%%vogaflex.com.br/checkout/finalizar%%'
+                    ),
+                    purchased_chats AS (
+                      SELECT DISTINCT f.chat_id
+                      FROM filtered f
+                      JOIN vogaflex_order vo ON
+                        vo.telefone_norm = f.contact_phone
+                        OR (LENGTH(vo.telefone_norm) = 13 AND LEFT(vo.telefone_norm, 4) || SUBSTRING(vo.telefone_norm FROM 6) = f.contact_phone)
+                        OR (LENGTH(f.contact_phone) = 12 AND LEFT(f.contact_phone, 4) || '9' || SUBSTRING(f.contact_phone FROM 5) = vo.telefone_norm)
+                      WHERE vo.status != 'CANCELADO'
                     )
                     SELECT
                       f.attendant_name AS vendedor,
@@ -1177,9 +1186,11 @@ def dashboard_api(request):
                       0::float AS avg_duration_seconds,
                       0::float AS avg_handoff_seconds,
                       0::float AS avg_score,
-                      COUNT(DISTINCT ck.chat_id) AS checkouts_count
+                      COUNT(DISTINCT ck.chat_id) AS checkouts_count,
+                      COUNT(DISTINCT pc.chat_id) AS purchases_count
                     FROM filtered f
                     LEFT JOIN checkout_chats ck ON ck.chat_id = f.chat_id
+                    LEFT JOIN purchased_chats pc ON pc.chat_id = f.chat_id
                     WHERE f.attendant_name IS NOT NULL
                       AND NOT ({sdr_attendant_exclude_sql})
                     GROUP BY f.attendant_name
@@ -1369,6 +1380,15 @@ def dashboard_api(request):
                   JOIN filtered f ON f.chat_id = sm.chat_id::text
                   WHERE sm.from_me = true
                     AND sm.content_text ILIKE '%%vogaflex.com.br/checkout/finalizar%%'
+                ),
+                purchased_chats AS (
+                  SELECT DISTINCT f.chat_id
+                  FROM filtered f
+                  JOIN vogaflex_order vo ON
+                    vo.telefone_norm = f.contact_phone
+                    OR (LENGTH(vo.telefone_norm) = 13 AND LEFT(vo.telefone_norm, 4) || SUBSTRING(vo.telefone_norm FROM 6) = f.contact_phone)
+                    OR (LENGTH(f.contact_phone) = 12 AND LEFT(f.contact_phone, 4) || '9' || SUBSTRING(f.contact_phone FROM 5) = vo.telefone_norm)
+                  WHERE vo.status != 'CANCELADO'
                 )
                 SELECT
                   f.attendant_name AS vendedor,
@@ -1394,13 +1414,15 @@ def dashboard_api(request):
                   AVG(COALESCE(bd.business_seconds, dm.duration_seconds)) AS avg_duration_seconds,
                   AVG(COALESCE(bh.business_seconds, dm.handoff_seconds)) AS avg_handoff_seconds,
                   0::numeric AS avg_score,
-                  COUNT(DISTINCT ck.chat_id) AS checkouts_count
+                  COUNT(DISTINCT ck.chat_id) AS checkouts_count,
+                  COUNT(DISTINCT pc.chat_id) AS purchases_count
                 FROM filtered f
                 LEFT JOIN message_stats ms ON ms.chat_id = f.chat_id
                 LEFT JOIN business_duration bd ON bd.chat_id = f.chat_id
                 LEFT JOIN business_handoff bh ON bh.chat_id = f.chat_id
                 LEFT JOIN direct_metrics dm ON dm.chat_id = f.chat_id
                 LEFT JOIN checkout_chats ck ON ck.chat_id = f.chat_id
+                LEFT JOIN purchased_chats pc ON pc.chat_id = f.chat_id
                 WHERE f.attendant_name IS NOT NULL
                   AND NOT ({sdr_attendant_exclude_sql})
                 GROUP BY f.attendant_name
@@ -1485,6 +1507,7 @@ def dashboard_api(request):
                     "avg_handoff_seconds": float(row[8]) if row[8] is not None else 0,
                     "avg_score": float(row[9]) if row[9] is not None else 0,
                     "checkouts_count": row[10] if len(row) > 10 else 0,
+                    "purchases_count": row[11] if len(row) > 11 else 0,
                 }
                 for row in vendor_rows
             ]
