@@ -768,25 +768,14 @@ def dashboard_api(request):
         ),
         human_events AS (
           SELECT
-            m.chat_id,
-            MIN(m."timestamp") AS first_human_ts
-          FROM messages m
-          JOIN bot_events b ON b.chat_id = m.chat_id
-          WHERE m.from_client = false
-            AND m."timestamp" > b.bot_transfer_ts
-            AND (
-              m.content IS NULL OR (
-                m.content NOT ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                AND m.content NOT ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                AND m.content NOT ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                AND m.content NOT ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                AND m.content NOT ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                AND m.content NOT ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                AND m.content NOT ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                AND m.content NOT ILIKE '%%atendimento ao nosso setor de vendas.%%'
-              )
-            )
-          GROUP BY m.chat_id
+            sm.chat_id::text AS chat_id,
+            MIN(sm.event_time) AS first_human_ts
+          FROM smclick_message sm
+          JOIN bot_events b ON b.chat_id = sm.chat_id::text
+          WHERE sm.from_me = true
+            AND sm.event_time > b.bot_transfer_ts
+            AND (sm.sent_by_name IS NOT NULL OR (sm.content_text IS NOT NULL AND sm.content_text ~ '^\*[^*]+\*'))
+          GROUP BY sm.chat_id
         ),
         business_handoff AS (
           SELECT
@@ -967,18 +956,12 @@ def dashboard_api(request):
                   {owners_join_sql}
                 ),
                 message_stats AS (
-                  SELECT chat_id,
-                         SUM(CASE WHEN outbound THEN 1 ELSE 0 END) AS outbound_count,
-                         SUM(CASE WHEN NOT outbound THEN 1 ELSE 0 END) AS inbound_count
-                  FROM (
-                    SELECT m.chat_id, (m.from_client = false) AS outbound
-                    FROM messages m JOIN filtered f ON f.chat_id = m.chat_id
-                    UNION ALL
-                    SELECT sm.chat_id::text,
-                           (sm.from_me = true AND sm.sent_by_name IS NOT NULL) AS outbound
-                    FROM smclick_message sm JOIN filtered f ON f.chat_id = sm.chat_id::text
-                  ) _ms
-                  GROUP BY chat_id
+                  SELECT sm.chat_id::text AS chat_id,
+                         SUM(CASE WHEN sm.from_me THEN 1 ELSE 0 END) AS outbound_count,
+                         SUM(CASE WHEN NOT sm.from_me THEN 1 ELSE 0 END) AS inbound_count
+                  FROM smclick_message sm
+                  JOIN filtered f ON f.chat_id = sm.chat_id::text
+                  GROUP BY sm.chat_id
                 ),
                 {_bot_events_cte}
                 SELECT
@@ -1044,17 +1027,11 @@ def dashboard_api(request):
                   {owners_join_sql}
                 ),
                 message_stats AS (
-                  SELECT chat_id,
-                         SUM(CASE WHEN outbound THEN 1 ELSE 0 END) AS outbound_count
-                  FROM (
-                    SELECT m.chat_id, (m.from_client = false) AS outbound
-                    FROM messages m JOIN filtered f ON f.chat_id = m.chat_id
-                    UNION ALL
-                    SELECT sm.chat_id::text,
-                           (sm.from_me = true AND sm.sent_by_name IS NOT NULL) AS outbound
-                    FROM smclick_message sm JOIN filtered f ON f.chat_id = sm.chat_id::text
-                  ) _ms
-                  GROUP BY chat_id
+                  SELECT sm.chat_id::text AS chat_id,
+                         SUM(CASE WHEN sm.from_me THEN 1 ELSE 0 END) AS outbound_count
+                  FROM smclick_message sm
+                  JOIN filtered f ON f.chat_id = sm.chat_id::text
+                  GROUP BY sm.chat_id
                 ),
                 {_bot_events_cte}
                 SELECT
@@ -1251,64 +1228,20 @@ def dashboard_api(request):
                 ),
                 structured_budget_values AS (
                   SELECT
-                    src.chat_id,
-                    MAX(src.budget_value) AS budget_value
-                  FROM (
-                    SELECT
-                      f.chat_id,
-                      CASE
-                        WHEN f.budget_value > 0 THEN f.budget_value
-                        ELSE NULL
-                      END AS budget_value
-                    FROM filtered f
-
-                    UNION ALL
-
-                    SELECT
-                      f.chat_id,
-                      CASE
-                        WHEN raw.raw_budget_txt IS NULL THEN NULL
-                        WHEN REPLACE(REGEXP_REPLACE(raw.raw_budget_txt, '[^0-9,.-]', '', 'g'), ',', '.') ~ '^-?[0-9]+(\\.[0-9]+)?$'
-                          THEN REPLACE(REGEXP_REPLACE(raw.raw_budget_txt, '[^0-9,.-]', '', 'g'), ',', '.')::numeric
-                        WHEN REPLACE(REPLACE(REGEXP_REPLACE(raw.raw_budget_txt, '[^0-9,.-]', '', 'g'), '.', ''), ',', '.') ~ '^-?[0-9]+(\\.[0-9]+)?$'
-                          THEN REPLACE(REPLACE(REGEXP_REPLACE(raw.raw_budget_txt, '[^0-9,.-]', '', 'g'), '.', ''), ',', '.')::numeric
-                        ELSE NULL
-                      END AS budget_value
-                    FROM filtered f
-                    JOIN public.semclick_conversations sc
-                      ON sc.chat_id::text = f.chat_id::text
-                    CROSS JOIN LATERAL (
-                      SELECT NULLIF(
-                        BTRIM(
-                          COALESCE(
-                            to_jsonb(sc)->>'valor_orcamento_atual',
-                            to_jsonb(sc)->>'valor_orcamento',
-                            to_jsonb(sc)->>'budget_value',
-                            ''
-                          )
-                        ),
-                        ''
-                      ) AS raw_budget_txt
-                    ) raw
-                  ) src
-                  WHERE src.budget_value IS NOT NULL
-                    AND src.budget_value > 0
-                    AND src.budget_value <= {budget_outlier_ceiling}
-                  GROUP BY src.chat_id
+                    f.chat_id,
+                    f.budget_value
+                  FROM filtered f
+                  WHERE f.budget_value IS NOT NULL
+                    AND f.budget_value > 0
+                    AND f.budget_value <= {budget_outlier_ceiling}
                 ),
                 {_bot_events_cte},
                 message_stats AS (
-                  SELECT chat_id,
-                         SUM(CASE WHEN outbound THEN 1 ELSE 0 END) AS outbound_count
-                  FROM (
-                    SELECT m.chat_id, (m.from_client = false) AS outbound
-                    FROM messages m JOIN filtered f ON f.chat_id = m.chat_id
-                    UNION ALL
-                    SELECT sm.chat_id::text,
-                           (sm.from_me = true AND sm.sent_by_name IS NOT NULL) AS outbound
-                    FROM smclick_message sm JOIN filtered f ON f.chat_id = sm.chat_id::text
-                  ) _ms
-                  GROUP BY chat_id
+                  SELECT sm.chat_id::text AS chat_id,
+                         SUM(CASE WHEN sm.from_me THEN 1 ELSE 0 END) AS outbound_count
+                  FROM smclick_message sm
+                  JOIN filtered f ON f.chat_id = sm.chat_id::text
+                  GROUP BY sm.chat_id
                 ),
                 conversation_times AS (
                   SELECT
@@ -1350,38 +1283,15 @@ def dashboard_api(request):
                   GROUP BY ct.chat_id
                 ),
                 human_events AS (
-                  SELECT chat_id, MIN(first_ts) AS first_human_ts FROM (
-                    SELECT
-                      m.chat_id,
-                      MIN(m."timestamp") AS first_ts
-                    FROM messages m
-                    JOIN bot_events b ON b.chat_id = m.chat_id
-                    WHERE m.from_client = false
-                      AND m."timestamp" > b.bot_transfer_ts
-                      AND (
-                        m.content IS NULL OR (
-                          m.content NOT ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                          AND m.content NOT ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                          AND m.content NOT ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                          AND m.content NOT ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                          AND m.content NOT ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                          AND m.content NOT ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                          AND m.content NOT ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                          AND m.content NOT ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                        )
-                      )
-                    GROUP BY m.chat_id
-                    UNION ALL
-                    SELECT
-                      sm.chat_id::text,
-                      MIN(sm.event_time) AS first_ts
-                    FROM smclick_message sm
-                    JOIN bot_events b ON b.chat_id = sm.chat_id::text
-                    WHERE sm.from_me = true
-                      AND (sm.sent_by_name IS NOT NULL OR (sm.content_text IS NOT NULL AND sm.content_text ~ '^\\*[^*]+\\*'))
-                      AND sm.event_time > b.bot_transfer_ts
-                    GROUP BY sm.chat_id::text
-                  ) _he GROUP BY chat_id
+                  SELECT
+                    sm.chat_id::text AS chat_id,
+                    MIN(sm.event_time) AS first_human_ts
+                  FROM smclick_message sm
+                  JOIN bot_events b ON b.chat_id = sm.chat_id::text
+                  WHERE sm.from_me = true
+                    AND sm.event_time > b.bot_transfer_ts
+                    AND (sm.sent_by_name IS NOT NULL OR (sm.content_text IS NOT NULL AND sm.content_text ~ '^\\*[^*]+\\*'))
+                  GROUP BY sm.chat_id
                 ),
                 business_handoff AS (
                   SELECT
@@ -1413,47 +1323,20 @@ def dashboard_api(request):
                   GROUP BY b.chat_id
                 ),
                 first_vendor_msg AS (
-                  SELECT chat_id, MIN(first_ts) AS first_ts FROM (
-                    SELECT
-                      m.chat_id,
-                      MIN(m."timestamp") AS first_ts
-                    FROM messages m
-                    JOIN filtered f ON f.chat_id = m.chat_id
-                    WHERE m.from_client = false
-                      AND (
-                        m.content IS NULL OR (
-                          m.content NOT ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                          AND m.content NOT ILIKE '%%Vou verificar a disponibilidade com nosso time de vendas. Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso setor de vendas%%'
-                          AND m.content NOT ILIKE '%%Agradeço pelas informações! Estou direcionando o seu atendimento ao nosso time de vendas%%'
-                          AND m.content NOT ILIKE '%%Vou direcionar seu atendimento ao nosso time de vendas%%'
-                          AND m.content NOT ILIKE '%%Vou encaminhar ao nosso time de vendas%%'
-                          AND m.content NOT ILIKE '%%Obrigado, vou encaminhar ao nosso time de vendas%%'
-                          AND m.content NOT ILIKE '%%Obrigada, vou encaminhar ao nosso time de vendas%%'
-                          AND m.content NOT ILIKE '%%atendimento ao nosso setor de vendas.%%'
-                        )
-                      )
-                    GROUP BY m.chat_id
-                    UNION ALL
-                    SELECT
-                      sm.chat_id::text,
-                      MIN(sm.event_time) AS first_ts
-                    FROM smclick_message sm
-                    JOIN filtered f ON f.chat_id = sm.chat_id::text
-                    WHERE sm.from_me = true
-                      AND (sm.sent_by_name IS NOT NULL OR (sm.content_text IS NOT NULL AND sm.content_text ~ '^\\*[^*]+\\*'))
-                    GROUP BY sm.chat_id::text
-                  ) _fv GROUP BY chat_id
+                  SELECT
+                    sm.chat_id::text AS chat_id,
+                    MIN(sm.event_time) AS first_ts
+                  FROM smclick_message sm
+                  JOIN filtered f ON f.chat_id = sm.chat_id::text
+                  WHERE sm.from_me = true
+                    AND (sm.sent_by_name IS NOT NULL OR (sm.content_text IS NOT NULL AND sm.content_text ~ '^\\*[^*]+\\*'))
+                  GROUP BY sm.chat_id
                 ),
                 last_msg_ts AS (
-                  SELECT chat_id, MAX(last_ts) AS last_ts FROM (
-                    SELECT m.chat_id, MAX(m."timestamp") AS last_ts
-                    FROM messages m JOIN filtered f ON f.chat_id = m.chat_id
-                    GROUP BY m.chat_id
-                    UNION ALL
-                    SELECT sm.chat_id::text, MAX(sm.event_time) AS last_ts
-                    FROM smclick_message sm JOIN filtered f ON f.chat_id = sm.chat_id::text
-                    GROUP BY sm.chat_id::text
-                  ) _lm GROUP BY chat_id
+                  SELECT sm.chat_id::text AS chat_id, MAX(sm.event_time) AS last_ts
+                  FROM smclick_message sm
+                  JOIN filtered f ON f.chat_id = sm.chat_id::text
+                  GROUP BY sm.chat_id
                 ),
                 direct_handoff_business AS (
                   SELECT
