@@ -821,10 +821,11 @@ function AppContent({ onLogout }) {
     }
     if (!dashboardVendor) return () => {};
     setStageTimelineLoading(true);
+    const stageParams = dashboardVendor === "__geral__"
+      ? {}
+      : { vendedor: dashboardVendor };
     fetch(
-      `/api/dashboard/stages/?${buildDashboardParams({
-        vendedor: dashboardVendor,
-      })}`
+      `/api/dashboard/stages/?${buildDashboardParams(stageParams)}`
     )
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
@@ -2007,6 +2008,50 @@ function AppContent({ onLogout }) {
                                   <p className="alert-count">{list.length === 0 && alertsData === null ? "—" : list.length}</p>
                                   <p className="alert-label">{alert.label}</p>
                                   <p className="alert-desc">{alert.desc}</p>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <div className="dashboard-section">
+                        <div className="section-head">
+                          <h3>Timeline por etapa (estratificação)</h3>
+                          <p className="muted">
+                            Distribuição de todos os contatos por etapa do funil · clique para detalhar.
+                          </p>
+                        </div>
+                        {stageTimelineLoading ? (
+                          <p className="empty">Carregando estratificação...</p>
+                        ) : (
+                          <div className="stage-timeline-grid">
+                            {stageTimelineStages.map((stage) => {
+                              const height = Math.max(
+                                8,
+                                Math.round((stage.total / stageTimelineMax) * 100)
+                              );
+                              const isActive = selectedTimelineStage?.key === stage.key;
+                              return (
+                                <button
+                                  key={stage.key}
+                                  type="button"
+                                  className={`stage-timeline-item${
+                                    isActive ? " is-active" : ""
+                                  }`}
+                                  onClick={() => { setSelectedStageKey(stage.key); setStageListModal(true); }}
+                                >
+                                  <span className="stage-timeline-count">
+                                    {formatCount(stage.total)}
+                                  </span>
+                                  <span className="stage-timeline-track">
+                                    <span
+                                      className="stage-timeline-bar"
+                                      style={{ height: `${height}%` }}
+                                    />
+                                  </span>
+                                  <span className="stage-timeline-label">
+                                    {stage.label}
+                                  </span>
                                 </button>
                               );
                             })}
