@@ -226,7 +226,7 @@ def conversations_api(request):
             sc.order_value AS valor_pedido,
             sc.loss_reason AS motivo_perda,
             sc.product AS produto_interesse,
-            sc.chat_updated_at AS updated_at,
+            COALESCE(sc.last_event_at, sc.refreshed_at, sc.chat_updated_at) AS updated_at,
             sc.inserted_at AS created_at,
             CASE
               WHEN LOWER(COALESCE(sc.status, '')) IN ('screening', 'triagem') THEN 'Triagem'
