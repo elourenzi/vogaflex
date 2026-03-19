@@ -2018,6 +2018,23 @@ def smclick_debug(request):
                     "updated_24h": r[3],
                 }
 
+            # Pending event_log details
+            r = _safe(
+                "SELECT COUNT(*), MIN(received_at), MAX(received_at), "
+                "COUNT(*) FILTER (WHERE chat_id IS NULL), "
+                "COUNT(*) FILTER (WHERE payload IS NULL) "
+                "FROM smclick_event_log WHERE applied_at IS NULL",
+                "pending_details",
+            )
+            if r:
+                checks["pending_details"] = {
+                    "count": r[0],
+                    "oldest": str(r[1]) if r[1] else None,
+                    "newest": str(r[2]) if r[2] else None,
+                    "no_chat_id": r[3],
+                    "no_payload": r[4],
+                }
+
             checks["server_now"] = str(cur.execute("SELECT NOW()") or cur.fetchone()[0])
 
         return JsonResponse(checks)
