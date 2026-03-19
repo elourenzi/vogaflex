@@ -2056,6 +2056,31 @@ def smclick_force_sync(request):
 
 
 @csrf_exempt
+def smclick_backfill(request):
+    """Trigger backfill_smclick + sync_smclick."""
+    from django.core.management import call_command
+    import io
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
+    skip_messages = request.GET.get("skip_messages", "0") == "1"
+    out = io.StringIO()
+    try:
+        kwargs = {"stdout": out}
+        if date_from:
+            kwargs["date_from"] = date_from
+        if date_to:
+            kwargs["date_to"] = date_to
+        if skip_messages:
+            kwargs["skip_messages"] = True
+        call_command("backfill_smclick", **kwargs)
+        # Auto-run sync after backfill
+        call_command("sync_smclick", stdout=out)
+        return JsonResponse({"ok": True, "output": out.getvalue()})
+    except Exception as exc:
+        return JsonResponse({"ok": False, "error": str(exc), "output": out.getvalue()}, status=500)
+
+
+@csrf_exempt
 @require_POST
 def smclick_webhook(request):
     """Direct webhook receiver for SmClick events.

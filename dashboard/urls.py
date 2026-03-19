@@ -30,4 +30,5 @@ urlpatterns = [
     ),
     path("api/debug/smclick/", views.smclick_debug, name="smclick_debug"),
     path("api/debug/force-sync/", views.smclick_force_sync, name="smclick_force_sync"),
+    path("api/debug/backfill/", views.smclick_backfill, name="smclick_backfill"),
 ]
