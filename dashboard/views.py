@@ -1576,6 +1576,8 @@ def dashboard_api(request):
         cache.set(_cache_key, _response_data, timeout=_cache_ttl)
         return JsonResponse(_response_data)
     except Exception as exc:
+        import traceback, logging
+        logging.getLogger("dashboard").error("dashboard_api error: %s\n%s", exc, traceback.format_exc())
         return JsonResponse({"error": str(exc)}, status=500)
 
 
