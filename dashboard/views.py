@@ -1774,7 +1774,8 @@ def alerts_api(request):
       ),
       a_aguardando AS (
         SELECT f.chat_id, f.contact_name AS cliente_nome, f.contact_phone AS cliente_telefone,
-               f.attendant_name AS vendedor_nome, lm.event_time AS desde
+               f.attendant_name AS vendedor_nome, lm.event_time AS desde,
+               CASE WHEN lm.event_time < NOW() - INTERVAL '24 hours' THEN true ELSE false END AS over_24h
         FROM filtered f
         JOIN last_msg lm ON lm.chat_id = f.chat_id
         WHERE lm.from_me = false
@@ -1813,9 +1814,15 @@ def alerts_api(request):
       ) _r1
       UNION ALL
       SELECT * FROM (
+        SELECT 'aguardando_24_48h', chat_id, cliente_nome, cliente_telefone, vendedor_nome,
+               TO_CHAR(desde AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI')
+        FROM a_aguardando WHERE over_24h = true ORDER BY desde ASC
+      ) _r2a
+      UNION ALL
+      SELECT * FROM (
         SELECT 'aguardando_resposta', chat_id, cliente_nome, cliente_telefone, vendedor_nome,
                TO_CHAR(desde AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI')
-        FROM a_aguardando ORDER BY desde ASC
+        FROM a_aguardando WHERE over_24h = false ORDER BY desde ASC
       ) _r2
       UNION ALL
       SELECT * FROM (
@@ -1838,6 +1845,7 @@ def alerts_api(request):
 
         result = {
             "sem_retorno_2d": [],
+            "aguardando_24_48h": [],
             "aguardando_resposta": [],
             "midia_sem_info": [],
             "orcamento_sem_followup": [],

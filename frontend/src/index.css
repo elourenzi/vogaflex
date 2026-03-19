@@ -734,6 +734,72 @@ button.funnel-step {
   gap: 12px;
 }
 
+.vendor-response-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.response-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(47, 48, 61, 0.1);
+  background: #fff;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+
+.response-card:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.response-card.has-alerts:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.response-card-count {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.response-card-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+}
+
+.response-card--danger.has-alerts {
+  border-color: #c82650;
+  background: rgba(200, 38, 80, 0.06);
+}
+.response-card--danger .response-card-count {
+  color: #c82650;
+}
+
+.response-card--warning.has-alerts {
+  border-color: #e6a817;
+  background: rgba(230, 168, 23, 0.06);
+}
+.response-card--warning .response-card-count {
+  color: #b88a00;
+}
+
+.response-card--info.has-alerts {
+  border-color: #2e7d32;
+  background: rgba(46, 125, 50, 0.06);
+}
+.response-card--info .response-card-count {
+  color: #2e7d32;
+}
+
 .score-panel {
   border: 1px solid var(--border);
   border-radius: 16px;

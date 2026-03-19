@@ -1209,14 +1209,14 @@ function AppContent({ onLogout }) {
       .then((data) => {
         if (data.error) {
           console.error("Alerts API error:", data.error);
-          setAlertsData({ _error: data.error, sem_retorno_2d: [], aguardando_resposta: [], midia_sem_info: [], orcamento_sem_followup: [] });
+          setAlertsData({ _error: data.error, sem_retorno_2d: [], aguardando_24_48h: [], aguardando_resposta: [], midia_sem_info: [], orcamento_sem_followup: [] });
         } else {
           setAlertsData(data);
         }
       })
       .catch((err) => {
         console.error("Alerts fetch error:", err);
-        setAlertsData({ _error: String(err), sem_retorno_2d: [], aguardando_resposta: [], midia_sem_info: [], orcamento_sem_followup: [] });
+        setAlertsData({ _error: String(err), sem_retorno_2d: [], aguardando_24_48h: [], aguardando_resposta: [], midia_sem_info: [], orcamento_sem_followup: [] });
       })
       .finally(() => setAlertsLoading(false));
   };
@@ -2153,6 +2153,44 @@ function AppContent({ onLogout }) {
                                   <p className="stat-foot">Não registrado no CRM</p>
                                 </article>
                               </div>
+                              {(() => {
+                                const vendorName = selectedVendorMerged?.vendedor;
+                                const sem48 = (alertsData?.sem_retorno_2d || []).filter(a => a.vendedor_nome === vendorName);
+                                const sem24_48 = (alertsData?.aguardando_24_48h || []).filter(a => a.vendedor_nome === vendorName);
+                                const semResp = (alertsData?.aguardando_resposta || []).filter(a => a.vendedor_nome === vendorName);
+                                if (!alertsData || alertsLoading) return null;
+                                return (
+                                  <div className="vendor-response-cards">
+                                    <button
+                                      type="button"
+                                      className={`response-card response-card--danger${sem48.length > 0 ? " has-alerts" : ""}`}
+                                      onClick={() => sem48.length > 0 && setAlertModalKey("sem_retorno_2d")}
+                                      disabled={sem48.length === 0}
+                                    >
+                                      <p className="response-card-count">{sem48.length}</p>
+                                      <p className="response-card-label">Sem resposta +48h</p>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={`response-card response-card--warning${sem24_48.length > 0 ? " has-alerts" : ""}`}
+                                      onClick={() => sem24_48.length > 0 && setAlertModalKey("aguardando_24_48h")}
+                                      disabled={sem24_48.length === 0}
+                                    >
+                                      <p className="response-card-count">{sem24_48.length}</p>
+                                      <p className="response-card-label">Sem resposta 24–48h</p>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={`response-card response-card--info${semResp.length > 0 ? " has-alerts" : ""}`}
+                                      onClick={() => semResp.length > 0 && setAlertModalKey("aguardando_resposta")}
+                                      disabled={semResp.length === 0}
+                                    >
+                                      <p className="response-card-count">{semResp.length}</p>
+                                      <p className="response-card-label">Sem resposta &lt;24h</p>
+                                    </button>
+                                  </div>
+                                );
+                              })()}
                               <div className="dashboard-section">
                                 <div className="section-head">
                                   <h3>Timeline por etapa (estratificação)</h3>
@@ -2368,7 +2406,8 @@ function AppContent({ onLogout }) {
               <div>
                 <p className="stat-label">
                   {alertModalKey === "sem_retorno_2d" && "Parado há +2 dias"}
-                  {alertModalKey === "aguardando_resposta" && "Clientes sem resposta"}
+                  {alertModalKey === "aguardando_24_48h" && "Sem resposta 24–48h"}
+                  {alertModalKey === "aguardando_resposta" && "Sem resposta <24h"}
                   {alertModalKey === "midia_sem_info" && "Mídia sem texto"}
                   {alertModalKey === "orcamento_sem_followup" && "Proposta sem follow-up"}
                 </p>
