@@ -202,6 +202,13 @@ input {
   color: var(--accent);
 }
 
+.dashboard-subitem--geral {
+  border-bottom: 2px solid var(--border);
+  border-radius: 10px 10px 0 0;
+  margin-bottom: 4px;
+  font-weight: 700;
+}
+
 .dashboard-subitem-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1719,6 +1726,9 @@ h3 {
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
+.pipeline-funnel--5cols {
+  grid-template-columns: repeat(5, 1fr);
+}
 
 /* Secondary row (TMA/TME/somas) after divider: 4 cols */
 .pipeline-divider ~ .pipeline-step {
@@ -1854,6 +1864,9 @@ h3 {
 
 @media (max-width: 900px) {
   .pipeline-funnel {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .pipeline-funnel--5cols {
     grid-template-columns: repeat(3, 1fr);
   }
 }

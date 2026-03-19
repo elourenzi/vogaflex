@@ -917,8 +917,10 @@ function AppContent({ onLogout }) {
 
   useEffect(() => {
     if (vendorList.length === 0) return;
-    if (!dashboardVendor || !vendorList.some((item) => item.vendedor === dashboardVendor)) {
-      setDashboardVendor(vendorList[0].vendedor);
+    if (!dashboardVendor) {
+      setDashboardVendor("__geral__");
+    } else if (dashboardVendor !== "__geral__" && !vendorList.some((item) => item.vendedor === dashboardVendor)) {
+      setDashboardVendor("__geral__");
     }
   }, [dashboardVendor, vendorList]);
 
@@ -1686,6 +1688,18 @@ function AppContent({ onLogout }) {
               ) : null}
               {dashboardTab === "vendors" ? (
                 <div className="dashboard-submenu">
+                  <button
+                    type="button"
+                    className={`dashboard-subitem dashboard-subitem--geral${
+                      dashboardVendor === "__geral__" ? " is-active" : ""
+                    }`}
+                    onClick={() => setDashboardVendor("__geral__")}
+                  >
+                    <span className="dashboard-subitem-name">Visão geral</span>
+                    <span className="dashboard-subitem-meta">
+                      {formatCount(vendorTotals.contacts)}
+                    </span>
+                  </button>
                   {vendorList.length === 0 ? (
                     <p className="dashboard-submenu-empty">Sem vendedores no período.</p>
                   ) : (
@@ -1856,11 +1870,11 @@ function AppContent({ onLogout }) {
                         </div>
                       </div>
                     </>
-                  ) : (
+                  ) : dashboardVendor === "__geral__" ? (
                     <>
                       <div className="dashboard-section">
                         <div className="section-head">
-                          <h3>Painel geral comparativo</h3>
+                          <h3>Visão geral</h3>
                           <p className="muted">Resumo consolidado da equipe · funil de conversão.</p>
                         </div>
                         {(() => {
@@ -1985,11 +1999,14 @@ function AppContent({ onLogout }) {
                           </div>
                         )}
                       </div>
+                    </>
+                  ) : (
+                    <>
                       <div className="dashboard-section">
                         <div className="section-head">
-                          <h3>Comparativo por vendedor</h3>
+                          <h3>{selectedVendorMerged?.vendedor || "Vendedor"}</h3>
                           <p className="muted">
-                            Selecione um vendedor no menu lateral para ver os detalhes.
+                            {formatCount(selectedVendorMerged?.contacts_received || 0)} contatos líquidos no período.
                           </p>
                         </div>
                         <div className="vendor-detail">
@@ -1997,12 +2014,6 @@ function AppContent({ onLogout }) {
                             <p className="empty">Selecione um vendedor.</p>
                           ) : (
                             <>
-                              <div className="vendor-header">
-                                <h3>{selectedVendorMerged.vendedor}</h3>
-                                <span className="tag">
-                                  {formatCount(selectedVendorMerged.contacts_received)} contatos líquidos
-                                </span>
-                              </div>
                               {(() => {
                                 const recebidos    = selectedVendorMerged.contacts_received || 0;
                                 const morreram     = selectedVendorMerged.dead_contacts || 0;
@@ -2010,36 +2021,28 @@ function AppContent({ onLogout }) {
                                 const propostas    = selectedVendorMerged.budgets_detected_count || selectedVendorMerged.budgets_count || 0;
                                 const checkouts    = selectedVendorMerged.checkouts_count || 0;
                                 const compras      = selectedVendorMerged.purchases_count || 0;
-                                const parados      = alertsData?.sem_retorno_2d?.filter(c => c.vendedor_nome === selectedVendorMerged.vendedor)?.length ?? null;
-                                const semFollowup  = alertsData?.orcamento_sem_followup?.filter(c => c.vendedor_nome === selectedVendorMerged.vendedor)?.length ?? null;
-                                const steps = [
+                                const journeySteps = [
                                   { label: "Contatos recebidos",     value: recebidos,    perda: null, note: "Base líquida" },
                                   { label: "Contatos c/ interação",  value: comInteracao, perda: formatPercent(recebidos - comInteracao, recebidos), note: "Sem interação" },
-                                  { label: "Parado há +2 dias",      value: parados,      perda: parados != null ? formatPercent(parados, recebidos) : null, note: "Do total", loss: true, onClick: () => parados && setAlertModalKey("sem_retorno_2d") },
-                                  { label: "Propostas enviadas",     value: propostas,    perda: formatPercent(recebidos - propostas, recebidos), note: "Sem proposta" },
+                                  { label: "Propostas enviadas",     value: propostas,    perda: formatPercent(propostas, comInteracao), note: "Dos c/ interação" },
                                   { label: "Checkouts enviados",     value: checkouts,    perda: formatPercent(checkouts, propostas), note: "Das propostas" },
                                   { label: "Compras realizadas",     value: compras,      perda: formatPercent(compras, checkouts), note: "Dos checkouts" },
-                                  { label: "Proposta sem follow-up", value: semFollowup,  perda: semFollowup != null ? formatPercent(semFollowup, propostas) : null, note: "Das propostas", loss: true, onClick: () => semFollowup && setAlertModalKey("orcamento_sem_followup") },
-                                  { label: "Morreram",               value: morreram,     perda: formatPercent(morreram, recebidos), note: "Do total", loss: true, onClick: openDeadContacts },
                                 ];
                                 return (
-                                  <div className="pipeline-funnel" style={{marginBottom: 16}}>
-                                    {steps.map((s) => {
-                                      const Tag = s.onClick ? "button" : "div";
-                                      return (
-                                        <Tag key={s.label} type={s.onClick ? "button" : undefined}
-                                          className={"pipeline-step" + (s.loss ? " is-loss" : "") + (s.onClick ? " is-clickable" : "")}
-                                          onClick={s.onClick || undefined}
-                                        >
+                                  <div className="pipeline-section pipeline-section--journey" style={{marginBottom: 16}}>
+                                    <h4 className="pipeline-section-title">Jornada do cliente</h4>
+                                    <div className="pipeline-funnel pipeline-funnel--5cols">
+                                      {journeySteps.map((s) => (
+                                        <div key={s.label} className="pipeline-step">
                                           <p className="pipeline-step-label">{s.label}</p>
-                                          <p className="pipeline-step-value">{s.value == null ? (alertsLoading ? "..." : "—") : formatCount(s.value)}</p>
+                                          <p className="pipeline-step-value">{formatCount(s.value)}</p>
                                           <div className="pipeline-step-foot">
                                             {s.perda && <span className="pipeline-step-perda">{s.perda}</span>}
                                             <span className="pipeline-step-note">{s.note}</span>
                                           </div>
-                                        </Tag>
-                                      );
-                                    })}
+                                        </div>
+                                      ))}
+                                    </div>
                                   </div>
                                 );
                               })()}
