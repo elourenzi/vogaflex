@@ -2056,37 +2056,56 @@ def smclick_force_sync(request):
 
 
 @csrf_exempt
+_backfill_status = {"running": False, "output": "", "error": None, "started": None, "finished": None}
+
 def smclick_backfill(request):
-    """Trigger backfill_smclick + sync_smclick."""
+    """Trigger backfill_smclick + sync_smclick (runs in background thread)."""
     from django.core.management import call_command
-    import io, os
+    import io, os, threading
+    global _backfill_status
+
+    # GET /api/debug/backfill/?status=1  → check status
+    if request.GET.get("status") == "1":
+        return JsonResponse(_backfill_status)
+
+    if _backfill_status["running"]:
+        return JsonResponse({"ok": False, "error": "Backfill already running", "output": _backfill_status["output"]})
+
     date_from = request.GET.get("date_from")
     date_to = request.GET.get("date_to")
     skip_messages = request.GET.get("skip_messages", "0") == "1"
     api_key = request.GET.get("api_key") or os.environ.get("SMCLICK_API_KEY")
     if not api_key:
         return JsonResponse({"ok": False, "error": "SMCLICK_API_KEY not set"}, status=400)
-    out = io.StringIO()
-    try:
-        kwargs = {"stdout": out, "stderr": out, "api_key": api_key}
-        if date_from:
-            kwargs["date_from"] = date_from
-        if date_to:
-            kwargs["date_to"] = date_to
-        if skip_messages:
-            kwargs["skip_messages"] = True
-        call_command("backfill_smclick", **kwargs)
-        # Auto-run sync after backfill
-        call_command("sync_smclick", stdout=out)
-        return JsonResponse({"ok": True, "output": out.getvalue()})
-    except Exception as exc:
-        import traceback
-        return JsonResponse({
-            "ok": False,
-            "error": str(exc),
-            "traceback": traceback.format_exc(),
-            "output": out.getvalue(),
-        }, status=500)
+
+    def _run():
+        import traceback as tb
+        out = io.StringIO()
+        _backfill_status["running"] = True
+        _backfill_status["error"] = None
+        _backfill_status["output"] = ""
+        _backfill_status["started"] = str(datetime.now())
+        _backfill_status["finished"] = None
+        try:
+            kwargs = {"stdout": out, "stderr": out, "api_key": api_key}
+            if date_from:
+                kwargs["date_from"] = date_from
+            if date_to:
+                kwargs["date_to"] = date_to
+            if skip_messages:
+                kwargs["skip_messages"] = True
+            call_command("backfill_smclick", **kwargs)
+            call_command("sync_smclick", stdout=out)
+            _backfill_status["output"] = out.getvalue()
+        except Exception as exc:
+            _backfill_status["error"] = tb.format_exc()
+            _backfill_status["output"] = out.getvalue()
+        finally:
+            _backfill_status["running"] = False
+            _backfill_status["finished"] = str(datetime.now())
+
+    threading.Thread(target=_run, daemon=True).start()
+    return JsonResponse({"ok": True, "message": "Backfill started in background. Check ?status=1 for progress."})
 
 
 @csrf_exempt
